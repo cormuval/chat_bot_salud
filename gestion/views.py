@@ -2,7 +2,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, HttpResponseRedirect
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm
 from .models import Gestion
@@ -110,7 +111,7 @@ def comunicador_detalle(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_comunicador(perfil):
         return redirect("gestion:sin_acceso")
-    gestion = gestion_alcanzable_o_404(perfil, pk)
+    gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
     puede_escribir = puede_escribir_comunicador(perfil)
     form = AccionComunicadorForm(request.POST or None)
     if request.method == "POST":
@@ -133,11 +134,12 @@ def comunicador_detalle(request, pk):
 
 
 @login_required
+@require_POST
 def registrar_whatsapp(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_escribir_comunicador(perfil):
         return redirect("gestion:sin_acceso")
-    gestion = gestion_alcanzable_o_404(perfil, pk)
+    gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
     url = gestion.url_whatsapp()
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")

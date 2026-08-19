@@ -764,3 +764,47 @@ class ComunicadorViewsTests(TestCase):
         response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
         self.assertIn("/sin-acceso/", response["Location"])
+
+    def test_detalle_no_permite_accion_en_casos_fuera_de_la_tabla(self):
+        pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica.marcar_no_aplica(self.usuario)
+
+        for gestion in (pendiente, no_aplica):
+            response = self.client.post(
+                f"/comunicador/{gestion.pk}/",
+                {"accion": "NO_CONTESTA"},
+                HTTP_HOST="gestion.localhost",
+            )
+
+            self.assertEqual(response.status_code, 404)
+            gestion.refresh_from_db()
+            self.assertEqual(gestion.intentos_contacto, 0)
+
+    def test_whatsapp_no_permite_casos_fuera_de_la_tabla(self):
+        pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica.marcar_no_aplica(self.usuario)
+
+        for gestion in (pendiente, no_aplica):
+            response = self.client.post(
+                f"/comunicador/{gestion.pk}/whatsapp/",
+                HTTP_HOST="gestion.localhost",
+            )
+
+            self.assertEqual(response.status_code, 404)
+            gestion.refresh_from_db()
+            self.assertEqual(gestion.intentos_contacto, 0)
+
+    def test_whatsapp_get_no_registra_intento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/whatsapp/",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertEqual(response.status_code, 405)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 0)
