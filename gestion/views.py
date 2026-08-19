@@ -8,7 +8,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import AccionComunicadorForm, DecisionSelectorForm
+from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
 from .models import Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
@@ -159,6 +159,7 @@ def comunicador_detalle(request, pk):
         gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
     puede_escribir = puede_escribir_comunicador(perfil)
     form = AccionComunicadorForm(request.POST or None)
+    form_whatsapp = WhatsappComunicadorForm()
     if request.method == "POST":
         if not puede_escribir:
             return redirect("gestion:sin_acceso")
@@ -177,6 +178,7 @@ def comunicador_detalle(request, pk):
             "perfil": perfil,
             "gestion": gestion,
             "form": form,
+            "form_whatsapp": form_whatsapp,
             "puede_escribir": puede_escribir,
         },
     )
@@ -193,10 +195,14 @@ def registrar_whatsapp(request, pk):
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
+    form = WhatsappComunicadorForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "El formulario de WhatsApp no es valido.")
+        return redirect("gestion:comunicador_detalle", pk=gestion.pk)
     try:
         gestion.registrar_click_whatsapp(
             request.user,
-            token_contacto=request.POST.get("token_contacto", ""),
+            token_contacto=form.cleaned_data.get("token_contacto", ""),
         )
     except ValidationError:
         messages.error(

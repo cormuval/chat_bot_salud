@@ -554,22 +554,37 @@ class GestionModeloTests(TestCase):
 
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
-        self.assertEqual(gestion.ultimo_token_contacto, "token-repetido")
+        self.assertEqual(gestion.tokens_contacto.count(), 1)
         self.assertEqual(
             gestion.ultima_accion_contacto,
             Gestion.AccionContacto.NO_CONTESTA,
         )
 
-    def test_no_contesta_con_nuevo_token_suma_otro_intento(self):
+    def test_reintento_tardio_no_reaplica_token_anterior(self):
         gestion = crear_solicitud_base().gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
 
         gestion.registrar_no_contesta(self.usuario, token_contacto="token-uno")
         gestion.registrar_no_contesta(self.usuario, token_contacto="token-dos")
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-uno")
 
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 2)
-        self.assertEqual(gestion.ultimo_token_contacto, "token-dos")
+        self.assertEqual(gestion.tokens_contacto.count(), 2)
+
+    def test_mismo_token_con_distinta_accion_aplica_ambas(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-compartido")
+        gestion.registrar_click_whatsapp(
+            self.usuario, token_contacto="token-compartido"
+        )
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 2)
+        self.assertEqual(gestion.tokens_contacto.count(), 2)
+        self.assertIsNotNone(gestion.aviso_whatsapp_en)
 
     def test_click_whatsapp_duplicado_no_suma_otro_intento(self):
         gestion = crear_solicitud_base().gestion
@@ -1000,7 +1015,7 @@ class ComunicadorViewsTests(TestCase):
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertIsNone(gestion.cerrada_en)
 
-    def test_formulario_genera_token_y_lo_reutiliza_en_whatsapp(self):
+    def test_formularios_generan_tokens_distintos(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
 
@@ -1008,9 +1023,60 @@ class ComunicadorViewsTests(TestCase):
             f"/comunicador/{gestion.pk}/", HTTP_HOST="gestion.localhost"
         )
 
-        token = response.context["form"]["token_contacto"].value()
-        self.assertTrue(token)
-        self.assertContains(response, f'value="{token}"', count=2)
+        token_contacto = response.context["form"]["token_contacto"].value()
+        token_whatsapp = response.context["form_whatsapp"]["token_contacto"].value()
+        self.assertTrue(token_contacto)
+        self.assertTrue(token_whatsapp)
+        self.assertNotEqual(token_contacto, token_whatsapp)
+        self.assertContains(response, f'value="{token_contacto}"', count=1)
+        self.assertContains(response, f'value="{token_whatsapp}"', count=1)
+
+    def test_whatsapp_y_cierre_desde_misma_pagina_aplican_ambos(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        detalle = f"/comunicador/{gestion.pk}/"
+        response = self.client.get(detalle, HTTP_HOST="gestion.localhost")
+        token_contacto = response.context["form"]["token_contacto"].value()
+        token_whatsapp = response.context["form_whatsapp"]["token_contacto"].value()
+
+        self.client.post(
+            f"{detalle}whatsapp/",
+            {"token_contacto": token_whatsapp},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.client.post(
+            detalle,
+            {"accion": "NO_ACEPTA", "token_contacto": token_contacto},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 2)
+        self.assertIsNotNone(gestion.aviso_whatsapp_en)
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.NO_ACEPTA)
+
+    def test_no_contesta_y_whatsapp_desde_misma_pagina_aplican_ambos(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        detalle = f"/comunicador/{gestion.pk}/"
+        response = self.client.get(detalle, HTTP_HOST="gestion.localhost")
+        token_contacto = response.context["form"]["token_contacto"].value()
+        token_whatsapp = response.context["form_whatsapp"]["token_contacto"].value()
+
+        self.client.post(
+            detalle,
+            {"accion": "NO_CONTESTA", "token_contacto": token_contacto},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.client.post(
+            f"{detalle}whatsapp/",
+            {"token_contacto": token_whatsapp},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 2)
+        self.assertIsNotNone(gestion.aviso_whatsapp_en)
 
     def test_no_contesta_repetido_con_mismo_token_y_nuevo_formulario(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion

@@ -308,7 +308,6 @@ class Gestion(models.Model):
         choices=AccionContacto.choices,
         blank=True,
     )
-    ultimo_token_contacto = models.CharField(max_length=64, blank=True)
 
     objects = GestionQuerySet.as_manager()
 
@@ -511,18 +510,26 @@ class Gestion(models.Model):
                 )
             if gestion.cerrada_en is not None and not gestion.tiene_cierre_automatico:
                 return False
-            if token_contacto and gestion.ultimo_token_contacto == token_contacto:
+            if token_contacto and TokenContactoGestion.objects.filter(
+                gestion=gestion,
+                token=token_contacto,
+                accion=accion,
+            ).exists():
                 return False
 
             if gestion.cerrada_en is None and gestion.rechazado_vencido(ahora):
                 gestion._aplicar_cierre_automatico(ahora)
 
+            if token_contacto:
+                TokenContactoGestion.objects.create(
+                    gestion=gestion,
+                    token=token_contacto,
+                    accion=accion,
+                )
             gestion.intentos_contacto += 1
             gestion.fecha_ultimo_intento = ahora
             gestion.contactado_por = usuario
             gestion.ultima_accion_contacto = accion
-            if token_contacto:
-                gestion.ultimo_token_contacto = token_contacto
             if registrar_whatsapp and gestion.aviso_whatsapp_en is None:
                 gestion.aviso_whatsapp_en = ahora
             if fecha_hora_citacion is not None:
@@ -539,7 +546,6 @@ class Gestion(models.Model):
                 "fecha_ultimo_intento",
                 "contactado_por",
                 "ultima_accion_contacto",
-                "ultimo_token_contacto",
                 "aviso_whatsapp_en",
                 "fecha_hora_citacion",
                 "cerrada_en",
@@ -632,3 +638,25 @@ class Gestion(models.Model):
             )
         mensaje = mensaje_base.replace("{nombre}", self.solicitud.nombre)
         return f"https://wa.me/{telefono.removeprefix('+')}?text={quote_plus(mensaje)}"
+
+
+class TokenContactoGestion(models.Model):
+    gestion = models.ForeignKey(
+        Gestion,
+        on_delete=models.CASCADE,
+        related_name="tokens_contacto",
+    )
+    token = models.CharField(max_length=128)
+    accion = models.CharField(max_length=20, choices=Gestion.AccionContacto.choices)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "gestion_token_contacto"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["gestion", "token", "accion"],
+                name="gestion_token_accion_uniq",
+            )
+        ]
+        verbose_name = "token de contacto"
+        verbose_name_plural = "tokens de contacto"

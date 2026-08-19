@@ -13,7 +13,7 @@
   </form>
   <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}">
     {% csrf_token %}
-    <input type="hidden" name="token_contacto" value="{{ form.token_contacto.value }}">
+    {{ form_whatsapp.token_contacto }}
     <button type="submit">Abrir WhatsApp</button>
   </form>
 {% else %}

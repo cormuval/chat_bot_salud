@@ -69,7 +69,7 @@ class AccionComunicadorForm(forms.Form):
         widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
     )
     token_contacto = forms.CharField(
-        max_length=64,
+        max_length=128,
         required=False,
         widget=forms.HiddenInput,
     )
@@ -101,3 +101,16 @@ class AccionComunicadorForm(forms.Form):
         elif accion == self.NO_CONTACTADO:
             gestion.registrar_no_contactado(usuario, token_contacto=token_contacto)
         return gestion
+
+
+class WhatsappComunicadorForm(forms.Form):
+    token_contacto = forms.CharField(
+        max_length=128,
+        required=False,
+        widget=forms.HiddenInput,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.is_bound and not self.initial.get("token_contacto"):
+            self.initial["token_contacto"] = secrets.token_urlsafe(16)
