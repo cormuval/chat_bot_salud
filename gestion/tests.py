@@ -1,8 +1,10 @@
 from datetime import timedelta
+from io import StringIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
 from django.http import Http404
@@ -808,3 +810,46 @@ class ComunicadorViewsTests(TestCase):
         self.assertEqual(response.status_code, 405)
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 0)
+
+
+class CerrarRechazadosCommandTests(TestCase):
+    def setUp(self):
+        self.usuario = User.objects.create_user("selector@cmvalparaiso.cl")
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+
+    def _rechazado_vencido(self, aviso=False):
+        gestion = crear_solicitud_base().gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=25),
+            aviso_whatsapp_en=timezone.now() - timedelta(hours=2) if aviso else None,
+        )
+        gestion.refresh_from_db()
+        return gestion
+
+    def test_cierra_rechazado_vencido_sin_aviso(self):
+        gestion = self._rechazado_vencido(aviso=False)
+        out = StringIO()
+        call_command("cerrar_rechazados", stdout=out)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.SIN_AVISO)
+        self.assertIsNotNone(gestion.cerrada_en)
+        self.assertIn("1 rechazado", out.getvalue())
+
+    def test_cierra_rechazado_vencido_con_aviso_whatsapp(self):
+        gestion = self._rechazado_vencido(aviso=True)
+        call_command("cerrar_rechazados")
+        gestion.refresh_from_db()
+        self.assertEqual(
+            gestion.motivo_cierre, Gestion.MotivoCierre.AVISADO_WHATSAPP
+        )
+
+    def test_no_cierra_rechazado_menor_a_24_horas(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        call_command("cerrar_rechazados")
+        gestion.refresh_from_db()
+        self.assertIsNone(gestion.cerrada_en)
