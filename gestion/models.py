@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from urllib.parse import quote_plus
 
@@ -300,6 +301,13 @@ class Gestion(models.Model):
                     )
                 }
             )
+        if (
+            self.motivo_cierre == self.MotivoCierre.AGENDADA
+            and not self.fecha_hora_citacion
+        ):
+            raise ValidationError(
+                {"fecha_hora_citacion": "Debe indicar fecha y hora de citacion."}
+            )
 
     def _registrar_decision(self, usuario):
         if not self.puede_corregir_decision:
@@ -342,6 +350,8 @@ class Gestion(models.Model):
         self.save()
 
     def _registrar_intento(self, usuario, cerrar=False, motivo_cierre=""):
+        if self.cerrada_en is not None:
+            return
         self.intentos_contacto += 1
         self.fecha_ultimo_intento = timezone.now()
         self.contactado_por = usuario
@@ -355,11 +365,16 @@ class Gestion(models.Model):
         self._registrar_intento(usuario)
 
     def registrar_click_whatsapp(self, usuario):
-        if self.aviso_whatsapp_en is None:
-            self.aviso_whatsapp_en = timezone.now()
+        if self.aviso_whatsapp_en is not None:
+            return
+        self.aviso_whatsapp_en = timezone.now()
         self._registrar_intento(usuario)
 
     def registrar_agendada(self, usuario, fecha_hora):
+        if fecha_hora is None:
+            raise ValidationError(
+                {"fecha_hora_citacion": "Debe indicar fecha y hora de citacion."}
+            )
         self.fecha_hora_citacion = fecha_hora
         self._registrar_intento(
             usuario, cerrar=True, motivo_cierre=self.MotivoCierre.AGENDADA
@@ -387,8 +402,8 @@ class Gestion(models.Model):
         self.save()
 
     def url_whatsapp(self):
-        telefono = "".join(ch for ch in self.solicitud.telefono if ch.isdigit())
-        if not telefono:
+        telefono = self.solicitud.telefono
+        if not re.fullmatch(r"\+569\d{8}", telefono):
             return None
         if self.motivo_rechazo_id:
             mensaje_base = self.motivo_rechazo.mensaje_paciente
@@ -398,4 +413,4 @@ class Gestion(models.Model):
                 "solicitud de morbilidad."
             )
         mensaje = mensaje_base.format(nombre=self.solicitud.nombre)
-        return f"https://wa.me/{telefono}?text={quote_plus(mensaje)}"
+        return f"https://wa.me/{telefono.removeprefix('+')}?text={quote_plus(mensaje)}"

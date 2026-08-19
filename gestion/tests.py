@@ -430,6 +430,33 @@ class GestionModeloTests(TestCase):
         self.assertIsNotNone(gestion.fecha_ultimo_intento)
         self.assertIsNone(gestion.cerrada_en)
 
+    def test_click_whatsapp_duplicado_no_suma_otro_intento(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_click_whatsapp(self.usuario)
+        gestion.registrar_click_whatsapp(self.usuario)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertIsNotNone(gestion.aviso_whatsapp_en)
+
+    def test_cierre_duplicado_no_suma_otro_intento(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_acepta(self.usuario)
+        gestion.registrar_no_acepta(self.usuario)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.NO_ACEPTA)
+
+    def test_agendada_exige_fecha_hora(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        with self.assertRaises(ValidationError):
+            gestion.registrar_agendada(self.usuario, None)
+        gestion.refresh_from_db()
+        self.assertIsNone(gestion.cerrada_en)
+        self.assertIsNone(gestion.fecha_hora_citacion)
+
     def test_url_whatsapp_reemplaza_nombre_y_codifica_mensaje(self):
         gestion = crear_solicitud_base(nombre="Ana Perez").gestion
         gestion.rechazar(self.usuario, self.motivo)
@@ -439,6 +466,11 @@ class GestionModeloTests(TestCase):
 
     def test_url_whatsapp_none_con_telefono_invalido(self):
         gestion = crear_solicitud_base(telefono="").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        self.assertIsNone(gestion.url_whatsapp())
+
+    def test_url_whatsapp_none_con_telefono_chileno_invalido(self):
+        gestion = crear_solicitud_base(telefono="123").gestion
         gestion.rechazar(self.usuario, self.motivo)
         self.assertIsNone(gestion.url_whatsapp())
 
