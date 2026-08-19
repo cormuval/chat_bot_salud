@@ -1,0 +1,18 @@
+{% extends "gestion/base.html" %}
+{% block title %}Solicitud {{ gestion.solicitud_id }}{% endblock %}
+{% block content %}
+<h1>{{ gestion.solicitud.nombre }}</h1>
+<p>{{ gestion.solicitud.rut }} - {{ gestion.solicitud.telefono }}</p>
+<p>{{ gestion.solicitud.motivo }}</p>
+<p>{{ gestion.solicitud.detalle_motivo }}</p>
+{% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+{% if puede_escribir %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Guardar decision</button>
+  </form>
+{% else %}
+  <p>Vista de solo lectura.</p>
+{% endif %}
+{% endblock %}

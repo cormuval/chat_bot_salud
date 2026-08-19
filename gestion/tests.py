@@ -569,3 +569,112 @@ class GestionModeloTests(TestCase):
             fecha_decision=timezone.now() - timedelta(hours=25)
         )
         self.assertEqual(list(Gestion.objects.rechazados_vencidos()), [gestion])
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class SelectorViewsTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        # InnoDB no revierte AUTO_INCREMENT al deshacer la transaccion de TestCase.
+        sql = connection.ops.sequence_reset_by_name_sql(
+            no_style(),
+            [{"table": Solicitud._meta.db_table, "column": Solicitud._meta.pk.column}],
+        )
+        with connection.cursor() as cursor:
+            for sentencia in sql:
+                cursor.execute(sentencia)
+
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.otro_centro = Centro.objects.get(pk=621)
+        self.usuario = User.objects.create_user(
+            "selector@cmvalparaiso.cl", email="selector@cmvalparaiso.cl"
+        )
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_lista_muestra_solo_pendientes_del_centro_en_orden_admin(self):
+        baja = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+        ).gestion
+        urgente = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+        ).gestion
+        crear_solicitud_base(
+            centro_salud=self.otro_centro,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+        )
+
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["gestiones"]), [urgente, baja])
+
+    def test_aceptar_registra_prioridad_clinica(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {
+                "decision": Gestion.Decision.ACEPTADA,
+                "prioridad_clinica": Solicitud.Prioridad.ALTA,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
+        self.assertEqual(gestion.prioridad_clinica, Solicitud.Prioridad.ALTA)
+
+    def test_rechazar_registra_motivo(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {"decision": Gestion.Decision.RECHAZADA, "motivo_rechazo": self.motivo.pk},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.RECHAZADA)
+        self.assertEqual(gestion.motivo_rechazo, self.motivo)
+
+    def test_no_aplica_no_llega_al_comunicador(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(
+            Gestion.objects.tabla_comunicador(self.perfil).filter(pk=gestion.pk).exists()
+        )
+
+    def test_no_permite_corregir_si_ya_hay_intento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario)
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ya hay intentos registrados")
+
+    def test_comunicador_no_puede_entrar_a_selector(self):
+        self.perfil.rol = PerfilUsuario.Rol.COMUNICADOR
+        self.perfil.save()
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/sin-acceso/", response["Location"])

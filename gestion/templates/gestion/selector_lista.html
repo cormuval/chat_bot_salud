@@ -1,0 +1,21 @@
+{% extends "gestion/base.html" %}
+{% block title %}Cola del selector{% endblock %}
+{% block content %}
+<h1>Cola del selector</h1>
+<table>
+  <thead><tr><th>Paciente</th><th>Centro</th><th>Prioridad administrativa</th><th>Fecha</th><th></th></tr></thead>
+  <tbody>
+    {% for gestion in gestiones %}
+      <tr>
+        <td>{{ gestion.solicitud.nombre }}</td>
+        <td>{{ gestion.solicitud.centro_salud }}</td>
+        <td>{{ gestion.solicitud.get_priorizacion_solicitud_display }}</td>
+        <td>{{ gestion.solicitud.date_solicitud }}</td>
+        <td><a href="{% url 'gestion:selector_detalle' gestion.pk %}">Abrir</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5">No hay solicitudes pendientes.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
