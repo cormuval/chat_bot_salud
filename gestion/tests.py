@@ -395,7 +395,7 @@ class PanelRequiereLoginTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/oidc/authenticate/", response["Location"])
 
-    def test_usuario_con_perfil_ve_el_panel(self):
+    def test_usuario_con_perfil_va_a_cola_selector(self):
         usuario = User.objects.create_user(
             "funcionario@cmvalparaiso.cl", email="funcionario@cmvalparaiso.cl"
         )
@@ -405,8 +405,7 @@ class PanelRequiereLoginTests(TestCase):
         self.client.force_login(usuario)
 
         response = self.client.get("/", HTTP_HOST="gestion.localhost")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("construcción", response.content.decode("utf-8"))
+        self.assertRedirects(response, "/selector/", fetch_redirect_response=False)
 
     def test_usuario_sin_perfil_no_ve_el_panel(self):
         usuario = User.objects.create_user(
@@ -436,6 +435,32 @@ class PanelRequiereLoginTests(TestCase):
         response = self.client.get("/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
         self.assertIn("/sin-acceso/", response["Location"])
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class PanelRedireccionTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+
+    def _login(self, rol):
+        usuario = User.objects.create_user(f"{rol.lower()}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=usuario, rol=rol, centro=self.centro)
+        self.client.force_login(usuario)
+
+    def test_selector_va_a_cola_selector(self):
+        self._login(PerfilUsuario.Rol.SELECTOR)
+        response = self.client.get("/", HTTP_HOST="gestion.localhost")
+        self.assertRedirects(response, "/selector/", fetch_redirect_response=False)
+
+    def test_comunicador_va_a_tabla_comunicador(self):
+        self._login(PerfilUsuario.Rol.COMUNICADOR)
+        response = self.client.get("/", HTTP_HOST="gestion.localhost")
+        self.assertRedirects(response, "/comunicador/", fetch_redirect_response=False)
+
+    def test_full_va_a_cola_selector(self):
+        self._login(PerfilUsuario.Rol.FULL)
+        response = self.client.get("/", HTTP_HOST="gestion.localhost")
+        self.assertRedirects(response, "/selector/", fetch_redirect_response=False)
 
 
 class GestionModeloTests(TestCase):

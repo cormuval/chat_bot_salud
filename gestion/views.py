@@ -1,7 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -16,30 +16,20 @@ from .permisos import (
     puede_usar_selector,
 )
 
-
-def _tiene_perfil_activo(usuario):
-    # mozilla_django_oidc sobreescribe get_user() sin llamar a
-    # user_can_authenticate() (a diferencia de ModelBackend), asi que
-    # desmarcar User.is_active en el admin no revoca por si solo una sesion
-    # ya iniciada. Lo chequeamos aca ademas de en el perfil.
-    if not usuario.is_active:
-        return False
-    perfil = getattr(usuario, "perfil_gestion", None)
-    return perfil is not None and perfil.activo
-
-
 @login_required
 def panel(request):
-    if not _tiene_perfil_activo(request.user):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None:
         return redirect("gestion:sin_acceso")
-    return HttpResponse("Módulo de gestión — en construcción")
+    if puede_usar_selector(perfil):
+        return redirect("gestion:selector_lista")
+    if puede_usar_comunicador(perfil):
+        return redirect("gestion:comunicador_lista")
+    return redirect("gestion:sin_acceso")
 
 
 def sin_acceso(request):
-    return HttpResponse(
-        "Su cuenta no tiene acceso al módulo de gestión. "
-        "Solicite a la administración que le asigne un perfil."
-    )
+    return render(request, "gestion/sin_acceso.html")
 
 
 @login_required

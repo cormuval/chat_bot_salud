@@ -190,16 +190,15 @@ la regla.
 
 ## Estado
 
-Decisión de arquitectura **aprobada**.
+Decision de arquitectura **aprobada**. Autenticacion y perfiles
+**implementados** (ver `docs/superpowers/plans/2026-07-27-login-google-perfiles.md`).
+Modelo `Gestion`, cola del selector, tabla del comunicador, enlace de WhatsApp
+y cierre automatico de rechazados **implementados** (ver
+`docs/superpowers/plans/2026-08-19-modulo-seleccion.md`).
 
-- Autenticación y perfiles: **implementados** (ver
-  `docs/superpowers/plans/2026-07-27-login-google-perfiles.md` y
-  `docs/superpowers/specs/2026-07-27-login-google-perfiles-design.md`).
-- Etapas 1 y 2: **diseñadas, sin implementar**. Spec en
-  `docs/superpowers/specs/2026-07-28-modulo-seleccion-design.md`, pendiente de
-  validación con el equipo.
-- Ventana horaria del chatbot: **pendiente**, sin diseñar. Queda fuera del
-  módulo de selección; es trabajo del chatbot.
+Pendientes fuera de este alcance: reportes, estadisticas, tableros, agenda
+propia, administracion de cupos, UI de gestion de perfiles para el rol `SOME`,
+API de WhatsApp y mejoras futuras del chatbot.
 
 ## Referencias
 
