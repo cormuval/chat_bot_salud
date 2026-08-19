@@ -6,7 +6,13 @@ from .models import Gestion, MotivoRechazo
 
 
 class DecisionSelectorForm(forms.Form):
-    decision = forms.ChoiceField(choices=Gestion.Decision.choices)
+    decision = forms.ChoiceField(
+        choices=[
+            (Gestion.Decision.ACEPTADA, Gestion.Decision.ACEPTADA.label),
+            (Gestion.Decision.RECHAZADA, Gestion.Decision.RECHAZADA.label),
+            (Gestion.Decision.NO_APLICA, Gestion.Decision.NO_APLICA.label),
+        ]
+    )
     prioridad_clinica = forms.ChoiceField(
         choices=[("", "Seleccione prioridad clinica")] + list(Solicitud.Prioridad.choices),
         required=False,

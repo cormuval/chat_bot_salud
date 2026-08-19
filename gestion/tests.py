@@ -660,6 +660,18 @@ class SelectorViewsTests(TestCase):
             Gestion.objects.tabla_comunicador(self.perfil).filter(pk=gestion.pk).exists()
         )
 
+    def test_pendiente_es_una_decision_invalida(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {"decision": Gestion.Decision.PENDIENTE},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("decision", response.context["form"].errors)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.PENDIENTE)
+
     def test_no_permite_corregir_si_ya_hay_intento(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
