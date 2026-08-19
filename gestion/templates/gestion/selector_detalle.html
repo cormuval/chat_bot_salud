@@ -23,6 +23,9 @@
     {% if gestion.solicitud.credendencial_cuidador_discapacidad %}
       Credencial declarada.
       {% if gestion.solicitud.credencial_cuidador_discapacidad_foto %}Foto adjunta.{% else %}Sin foto adjunta.{% endif %}
+      {% if foto_credencial_data_url %}
+        <img src="{{ foto_credencial_data_url }}" alt="Foto de credencial de cuidador" style="display: block; max-width: 100%; max-height: 24rem; object-fit: contain;">
+      {% endif %}
     {% else %}
       No declarada.
     {% endif %}

@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -17,6 +19,18 @@ from .permisos import (
     puede_usar_selector,
     puede_ver_no_aplica,
 )
+
+
+PATRON_FOTO_CREDENCIAL = re.compile(
+    r"data:image/(?:png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+"
+)
+
+
+def _foto_credencial_data_url(gestion):
+    foto = gestion.solicitud.credencial_cuidador_discapacidad_foto
+    if foto and PATRON_FOTO_CREDENCIAL.fullmatch(foto):
+        return foto
+    return ""
 
 
 def _gestion_para_post_comunicador_o_404(perfil, pk):
@@ -112,6 +126,7 @@ def selector_detalle(request, pk):
             "gestion": gestion,
             "form": form,
             "puede_escribir": puede_escribir,
+            "foto_credencial_data_url": _foto_credencial_data_url(gestion),
         },
     )
 
@@ -148,10 +163,13 @@ def comunicador_detalle(request, pk):
         if not puede_escribir:
             return redirect("gestion:sin_acceso")
         if form.is_valid():
-            form.guardar(gestion, request.user)
-            _advertir_cierre_automatico(request, gestion)
-            messages.success(request, "Contacto registrado.")
-            return redirect("gestion:comunicador_lista")
+            try:
+                form.guardar(gestion, request.user)
+                _advertir_cierre_automatico(request, gestion)
+                messages.success(request, "Contacto registrado.")
+                return redirect("gestion:comunicador_lista")
+            except ValidationError as exc:
+                form.add_error(None, exc)
     return render(
         request,
         "gestion/comunicador_detalle.html",
@@ -175,6 +193,16 @@ def registrar_whatsapp(request, pk):
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
-    gestion.registrar_click_whatsapp(request.user)
+    try:
+        gestion.registrar_click_whatsapp(
+            request.user,
+            token_contacto=request.POST.get("token_contacto", ""),
+        )
+    except ValidationError:
+        messages.error(
+            request,
+            "La solicitud ya no esta disponible para registrar contacto.",
+        )
+        return redirect("gestion:comunicador_lista")
     _advertir_cierre_automatico(request, gestion)
     return HttpResponseRedirect(url)

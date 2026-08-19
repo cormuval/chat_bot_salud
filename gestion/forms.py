@@ -1,3 +1,5 @@
+import secrets
+
 from django import forms
 
 from solicitudes.models import Solicitud
@@ -66,6 +68,16 @@ class AccionComunicadorForm(forms.Form):
         input_formats=["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"],
         widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
     )
+    token_contacto = forms.CharField(
+        max_length=64,
+        required=False,
+        widget=forms.HiddenInput,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.is_bound and not self.initial.get("token_contacto"):
+            self.initial["token_contacto"] = secrets.token_urlsafe(16)
 
     def clean(self):
         cleaned = super().clean()
@@ -75,12 +87,17 @@ class AccionComunicadorForm(forms.Form):
 
     def guardar(self, gestion, usuario):
         accion = self.cleaned_data["accion"]
+        token_contacto = self.cleaned_data.get("token_contacto", "")
         if accion == self.AGENDADA:
-            gestion.registrar_agendada(usuario, self.cleaned_data["fecha_hora_citacion"])
+            gestion.registrar_agendada(
+                usuario,
+                self.cleaned_data["fecha_hora_citacion"],
+                token_contacto=token_contacto,
+            )
         elif accion == self.NO_ACEPTA:
-            gestion.registrar_no_acepta(usuario)
+            gestion.registrar_no_acepta(usuario, token_contacto=token_contacto)
         elif accion == self.NO_CONTESTA:
-            gestion.registrar_no_contesta(usuario)
+            gestion.registrar_no_contesta(usuario, token_contacto=token_contacto)
         elif accion == self.NO_CONTACTADO:
-            gestion.registrar_no_contactado(usuario)
+            gestion.registrar_no_contactado(usuario, token_contacto=token_contacto)
         return gestion

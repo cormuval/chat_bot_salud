@@ -549,21 +549,37 @@ class GestionModeloTests(TestCase):
         gestion = crear_solicitud_base().gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
 
-        gestion.registrar_no_contesta(self.usuario)
-        gestion.registrar_no_contesta(self.usuario)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-repetido")
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-repetido")
 
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertEqual(gestion.ultimo_token_contacto, "token-repetido")
         self.assertEqual(
             gestion.ultima_accion_contacto,
             Gestion.AccionContacto.NO_CONTESTA,
         )
 
+    def test_no_contesta_con_nuevo_token_suma_otro_intento(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-uno")
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-dos")
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 2)
+        self.assertEqual(gestion.ultimo_token_contacto, "token-dos")
+
     def test_click_whatsapp_duplicado_no_suma_otro_intento(self):
         gestion = crear_solicitud_base().gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
-        gestion.registrar_click_whatsapp(self.usuario)
-        gestion.registrar_click_whatsapp(self.usuario)
+        gestion.registrar_click_whatsapp(
+            self.usuario, token_contacto="token-whatsapp"
+        )
+        gestion.registrar_click_whatsapp(
+            self.usuario, token_contacto="token-whatsapp"
+        )
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertIsNotNone(gestion.aviso_whatsapp_en)
@@ -571,8 +587,12 @@ class GestionModeloTests(TestCase):
     def test_cierre_duplicado_no_suma_otro_intento(self):
         gestion = crear_solicitud_base().gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
-        gestion.registrar_no_acepta(self.usuario)
-        gestion.registrar_no_acepta(self.usuario)
+        gestion.registrar_no_acepta(
+            self.usuario, token_contacto="token-cierre"
+        )
+        gestion.registrar_no_acepta(
+            self.usuario, token_contacto="token-cierre"
+        )
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.NO_ACEPTA)
@@ -680,6 +700,22 @@ class GestionConcurrenciaTests(TransactionTestCase):
             gestion.ultima_accion_contacto,
             Gestion.AccionContacto.NO_CONTESTA,
         )
+
+    def test_comunicador_obsoleto_no_registra_intento_en_no_aplica(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.selector, Solicitud.Prioridad.MEDIA)
+        comunicador_obsoleto = Gestion.objects.get(pk=gestion.pk)
+
+        Gestion.objects.get(pk=gestion.pk).marcar_no_aplica(self.selector)
+
+        with self.assertRaises(ValidationError):
+            comunicador_obsoleto.registrar_no_contesta(
+                self.comunicador, token_contacto="token-obsoleto"
+            )
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.NO_APLICA)
+        self.assertEqual(gestion.intentos_contacto, 0)
 
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
@@ -812,6 +848,22 @@ class SelectorViewsTests(TestCase):
             self.assertContains(response, contenido)
         self.assertContains(response, "Fecha de decision")
         self.assertContains(response, "Vista de solo lectura")
+        self.assertContains(response, "<img", html=False)
+        self.assertContains(response, "data:image/png;base64,AAAA")
+
+    def test_detalle_no_renderiza_foto_si_no_es_data_url_de_imagen(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            credendencial_cuidador_discapacidad=True,
+            credencial_cuidador_discapacidad_foto="javascript:alert(1)",
+        ).gestion
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/", HTTP_HOST="gestion.localhost"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "<img", html=False)
 
     def test_aceptar_registra_prioridad_clinica(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -876,6 +928,28 @@ class SelectorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "ya hay intentos registrados")
 
+    def test_no_permite_corregir_rechazo_vencido_por_url_directa(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=25)
+        )
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {
+                "decision": Gestion.Decision.ACEPTADA,
+                "prioridad_clinica": Solicitud.Prioridad.ALTA,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "plazo de correccion")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.RECHAZADA)
+        self.assertEqual(gestion.motivo_rechazo, self.motivo)
+
     def test_comunicador_no_puede_entrar_a_selector(self):
         self.perfil.rol = PerfilUsuario.Rol.COMUNICADOR
         self.perfil.save()
@@ -925,6 +999,44 @@ class ComunicadorViewsTests(TestCase):
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertIsNone(gestion.cerrada_en)
+
+    def test_formulario_genera_token_y_lo_reutiliza_en_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/", HTTP_HOST="gestion.localhost"
+        )
+
+        token = response.context["form"]["token_contacto"].value()
+        self.assertTrue(token)
+        self.assertContains(response, f'value="{token}"', count=2)
+
+    def test_no_contesta_repetido_con_mismo_token_y_nuevo_formulario(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        detalle = f"/comunicador/{gestion.pk}/"
+        primer_get = self.client.get(detalle, HTTP_HOST="gestion.localhost")
+        primer_token = primer_get.context["form"]["token_contacto"].value()
+
+        for _ in range(2):
+            self.client.post(
+                detalle,
+                {"accion": "NO_CONTESTA", "token_contacto": primer_token},
+                HTTP_HOST="gestion.localhost",
+            )
+
+        segundo_get = self.client.get(detalle, HTTP_HOST="gestion.localhost")
+        segundo_token = segundo_get.context["form"]["token_contacto"].value()
+        self.assertNotEqual(primer_token, segundo_token)
+        self.client.post(
+            detalle,
+            {"accion": "NO_CONTESTA", "token_contacto": segundo_token},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 2)
 
     def test_rechazado_vencido_acepta_post_y_muestra_advertencia(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -994,6 +1106,31 @@ class ComunicadorViewsTests(TestCase):
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertIsNotNone(gestion.aviso_whatsapp_en)
         self.assertIsNone(gestion.cerrada_en)
+
+    def test_whatsapp_obsoleto_no_redirige_ni_contacta_no_aplica(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        comunicador_obsoleto = Gestion.objects.select_related("solicitud").get(
+            pk=gestion.pk
+        )
+        Gestion.objects.get(pk=gestion.pk).marcar_no_aplica(self.usuario)
+
+        with patch(
+            "gestion.views._gestion_para_post_comunicador_o_404",
+            return_value=comunicador_obsoleto,
+        ):
+            response = self.client.post(
+                f"/comunicador/{gestion.pk}/whatsapp/",
+                {"token_contacto": "token-whatsapp-obsoleto"},
+                HTTP_HOST="gestion.localhost",
+            )
+
+        self.assertRedirects(
+            response, "/comunicador/", fetch_redirect_response=False
+        )
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.NO_APLICA)
+        self.assertEqual(gestion.intentos_contacto, 0)
 
     def test_selector_no_puede_entrar_a_comunicador(self):
         self.perfil.rol = PerfilUsuario.Rol.SELECTOR

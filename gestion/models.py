@@ -308,6 +308,7 @@ class Gestion(models.Model):
         choices=AccionContacto.choices,
         blank=True,
     )
+    ultimo_token_contacto = models.CharField(max_length=64, blank=True)
 
     objects = GestionQuerySet.as_manager()
 
@@ -406,6 +407,11 @@ class Gestion(models.Model):
         return guardar
 
     def _registrar_decision(self, usuario):
+        if self.rechazado_vencido():
+            raise ValidationError(
+                "La decision no se puede corregir porque vencio el plazo de "
+                "correccion de 24 horas."
+            )
         if not self.puede_corregir_decision:
             raise ValidationError(
                 "La decision no se puede corregir porque ya hay intentos registrados."
@@ -492,17 +498,20 @@ class Gestion(models.Model):
         motivo_cierre="",
         fecha_hora_citacion=None,
         registrar_whatsapp=False,
+        token_contacto="",
     ):
         def mutar(gestion):
             ahora = timezone.now()
+            if gestion.decision not in (
+                self.Decision.ACEPTADA,
+                self.Decision.RECHAZADA,
+            ):
+                raise ValidationError(
+                    "La solicitud ya no esta disponible para registrar contacto."
+                )
             if gestion.cerrada_en is not None and not gestion.tiene_cierre_automatico:
                 return False
-            if (
-                accion == self.AccionContacto.NO_CONTESTA
-                and gestion.ultima_accion_contacto == accion
-            ):
-                return False
-            if registrar_whatsapp and gestion.aviso_whatsapp_en is not None:
+            if token_contacto and gestion.ultimo_token_contacto == token_contacto:
                 return False
 
             if gestion.cerrada_en is None and gestion.rechazado_vencido(ahora):
@@ -512,7 +521,9 @@ class Gestion(models.Model):
             gestion.fecha_ultimo_intento = ahora
             gestion.contactado_por = usuario
             gestion.ultima_accion_contacto = accion
-            if registrar_whatsapp:
+            if token_contacto:
+                gestion.ultimo_token_contacto = token_contacto
+            if registrar_whatsapp and gestion.aviso_whatsapp_en is None:
                 gestion.aviso_whatsapp_en = ahora
             if fecha_hora_citacion is not None:
                 gestion.fecha_hora_citacion = fecha_hora_citacion
@@ -528,6 +539,7 @@ class Gestion(models.Model):
                 "fecha_ultimo_intento",
                 "contactado_por",
                 "ultima_accion_contacto",
+                "ultimo_token_contacto",
                 "aviso_whatsapp_en",
                 "fecha_hora_citacion",
                 "cerrada_en",
@@ -535,17 +547,22 @@ class Gestion(models.Model):
             ],
         )
 
-    def registrar_no_contesta(self, usuario):
-        return self._registrar_intento(usuario, self.AccionContacto.NO_CONTESTA)
+    def registrar_no_contesta(self, usuario, token_contacto=""):
+        return self._registrar_intento(
+            usuario,
+            self.AccionContacto.NO_CONTESTA,
+            token_contacto=token_contacto,
+        )
 
-    def registrar_click_whatsapp(self, usuario):
+    def registrar_click_whatsapp(self, usuario, token_contacto=""):
         return self._registrar_intento(
             usuario,
             self.AccionContacto.WHATSAPP,
             registrar_whatsapp=True,
+            token_contacto=token_contacto,
         )
 
-    def registrar_agendada(self, usuario, fecha_hora):
+    def registrar_agendada(self, usuario, fecha_hora, token_contacto=""):
         if fecha_hora is None:
             raise ValidationError(
                 {"fecha_hora_citacion": "Debe indicar fecha y hora de citacion."}
@@ -556,22 +573,25 @@ class Gestion(models.Model):
             cerrar=True,
             motivo_cierre=self.MotivoCierre.AGENDADA,
             fecha_hora_citacion=fecha_hora,
+            token_contacto=token_contacto,
         )
 
-    def registrar_no_acepta(self, usuario):
+    def registrar_no_acepta(self, usuario, token_contacto=""):
         return self._registrar_intento(
             usuario,
             self.AccionContacto.NO_ACEPTA,
             cerrar=True,
             motivo_cierre=self.MotivoCierre.NO_ACEPTA,
+            token_contacto=token_contacto,
         )
 
-    def registrar_no_contactado(self, usuario):
+    def registrar_no_contactado(self, usuario, token_contacto=""):
         return self._registrar_intento(
             usuario,
             self.AccionContacto.NO_CONTACTADO,
             cerrar=True,
             motivo_cierre=self.MotivoCierre.NO_CONTACTADO,
+            token_contacto=token_contacto,
         )
 
     def _aplicar_cierre_automatico(self, ahora):
