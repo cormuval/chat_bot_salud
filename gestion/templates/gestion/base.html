@@ -8,6 +8,7 @@
 <body>
   <nav>
     <a href="{% url 'gestion:selector_lista' %}">Selector</a>
+    <a href="{% url 'gestion:comunicador_lista' %}">Comunicador</a>
   </nav>
   {% for message in messages %}<p>{{ message }}</p>{% endfor %}
   {% block content %}{% endblock %}

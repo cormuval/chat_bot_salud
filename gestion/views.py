@@ -1,15 +1,17 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
 
-from .forms import DecisionSelectorForm
+from .forms import AccionComunicadorForm, DecisionSelectorForm
 from .models import Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
     obtener_perfil_activo,
+    puede_escribir_comunicador,
     puede_escribir_selector,
+    puede_usar_comunicador,
     puede_usar_selector,
 )
 
@@ -84,3 +86,61 @@ def selector_detalle(request, pk):
             "puede_escribir": puede_escribir,
         },
     )
+
+
+@login_required
+def comunicador_lista(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_usar_comunicador(perfil):
+        return redirect("gestion:sin_acceso")
+    gestiones = Gestion.objects.tabla_comunicador(perfil)
+    return render(
+        request,
+        "gestion/comunicador_lista.html",
+        {
+            "perfil": perfil,
+            "gestiones": gestiones,
+            "puede_escribir": puede_escribir_comunicador(perfil),
+        },
+    )
+
+
+@login_required
+def comunicador_detalle(request, pk):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_usar_comunicador(perfil):
+        return redirect("gestion:sin_acceso")
+    gestion = gestion_alcanzable_o_404(perfil, pk)
+    puede_escribir = puede_escribir_comunicador(perfil)
+    form = AccionComunicadorForm(request.POST or None)
+    if request.method == "POST":
+        if not puede_escribir:
+            return redirect("gestion:sin_acceso")
+        if form.is_valid():
+            form.guardar(gestion, request.user)
+            messages.success(request, "Contacto registrado.")
+            return redirect("gestion:comunicador_lista")
+    return render(
+        request,
+        "gestion/comunicador_detalle.html",
+        {
+            "perfil": perfil,
+            "gestion": gestion,
+            "form": form,
+            "puede_escribir": puede_escribir,
+        },
+    )
+
+
+@login_required
+def registrar_whatsapp(request, pk):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_escribir_comunicador(perfil):
+        return redirect("gestion:sin_acceso")
+    gestion = gestion_alcanzable_o_404(perfil, pk)
+    url = gestion.url_whatsapp()
+    if not url:
+        messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
+        return redirect("gestion:comunicador_detalle", pk=gestion.pk)
+    gestion.registrar_click_whatsapp(request.user)
+    return HttpResponseRedirect(url)

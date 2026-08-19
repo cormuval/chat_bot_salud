@@ -690,3 +690,77 @@ class SelectorViewsTests(TestCase):
         response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
         self.assertIn("/sin-acceso/", response["Location"])
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ComunicadorViewsTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("comunicador@cmvalparaiso.cl", email="comunicador@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.COMUNICADOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_tabla_ordena_aceptadas_por_prioridad_clinica_y_rechazadas_al_final(self):
+        rechazada = crear_solicitud_base(centro_salud=self.centro).gestion
+        rechazada.rechazar(self.usuario, self.motivo)
+        baja = crear_solicitud_base(centro_salud=self.centro).gestion
+        baja.aceptar(self.usuario, Solicitud.Prioridad.BAJA)
+        urgente = crear_solicitud_base(centro_salud=self.centro).gestion
+        urgente.aceptar(self.usuario, Solicitud.Prioridad.URGENTE)
+
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["gestiones"]), [urgente, baja, rechazada])
+
+    def test_no_contesta_suma_intento_y_deja_abierto(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/",
+            {"accion": "NO_CONTESTA"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertIsNone(gestion.cerrada_en)
+
+    def test_agendada_cierra_con_fecha_hora(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/",
+            {"accion": "AGENDADA", "fecha_hora_citacion": "2026-08-20 09:30"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.AGENDADA)
+        self.assertIsNotNone(gestion.fecha_hora_citacion)
+
+    def test_whatsapp_registra_intento_y_redirige_a_wa_me(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.post(f"/comunicador/{gestion.pk}/whatsapp/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("https://wa.me/"))
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertIsNotNone(gestion.aviso_whatsapp_en)
+        self.assertIsNone(gestion.cerrada_en)
+
+    def test_selector_no_puede_entrar_a_comunicador(self):
+        self.perfil.rol = PerfilUsuario.Rol.SELECTOR
+        self.perfil.save()
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/sin-acceso/", response["Location"])

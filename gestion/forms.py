@@ -45,3 +45,42 @@ class DecisionSelectorForm(forms.Form):
         elif decision == Gestion.Decision.NO_APLICA:
             gestion.marcar_no_aplica(usuario)
         return gestion
+
+
+class AccionComunicadorForm(forms.Form):
+    AGENDADA = "AGENDADA"
+    NO_ACEPTA = "NO_ACEPTA"
+    NO_CONTESTA = "NO_CONTESTA"
+    NO_CONTACTADO = "NO_CONTACTADO"
+
+    accion = forms.ChoiceField(
+        choices=[
+            (AGENDADA, "Agendada"),
+            (NO_ACEPTA, "El paciente no acepta la citacion"),
+            (NO_CONTESTA, "No contesta"),
+            (NO_CONTACTADO, "No se logro contactar"),
+        ]
+    )
+    fecha_hora_citacion = forms.DateTimeField(
+        required=False,
+        input_formats=["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("accion") == self.AGENDADA and not cleaned.get("fecha_hora_citacion"):
+            self.add_error("fecha_hora_citacion", "Debe indicar fecha y hora acordadas.")
+        return cleaned
+
+    def guardar(self, gestion, usuario):
+        accion = self.cleaned_data["accion"]
+        if accion == self.AGENDADA:
+            gestion.registrar_agendada(usuario, self.cleaned_data["fecha_hora_citacion"])
+        elif accion == self.NO_ACEPTA:
+            gestion.registrar_no_acepta(usuario)
+        elif accion == self.NO_CONTESTA:
+            gestion.registrar_no_contesta(usuario)
+        elif accion == self.NO_CONTACTADO:
+            gestion.registrar_no_contactado(usuario)
+        return gestion
