@@ -62,3 +62,6 @@ desktop.ini
 
 # Project runtime files
 server.log
+
+# Agent scratch files
+.superpowers/
