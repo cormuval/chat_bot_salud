@@ -1,20 +1,35 @@
 {% extends "gestion/base.html" %}
 {% block title %}Cola del selector{% endblock %}
 {% block content %}
-<h1>Cola del selector</h1>
+<h1>Solicitudes del selector</h1>
+<nav aria-label="Secciones del selector">
+  <a href="{% url 'gestion:selector_lista' %}">Pendientes</a>
+  <a href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles</a>
+  {% if mostrar_no_aplica %}
+    <a href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica</a>
+  {% endif %}
+</nav>
+{% if seccion == "decididas" %}
+  <h2>Decididas corregibles</h2>
+{% elif seccion == "no_aplica" %}
+  <h2>No aplica</h2>
+{% else %}
+  <h2>Pendientes</h2>
+{% endif %}
 <table>
-  <thead><tr><th>Paciente</th><th>Centro</th><th>Prioridad administrativa</th><th>Fecha</th><th></th></tr></thead>
+  <thead><tr><th>Paciente</th><th>Centro</th><th>Prioridad administrativa</th><th>Decision</th><th>Fecha</th><th></th></tr></thead>
   <tbody>
     {% for gestion in gestiones %}
       <tr>
         <td>{{ gestion.solicitud.nombre }}</td>
         <td>{{ gestion.solicitud.centro_salud }}</td>
         <td>{{ gestion.solicitud.get_priorizacion_solicitud_display }}</td>
+        <td>{{ gestion.get_decision_display }}</td>
         <td>{{ gestion.solicitud.date_solicitud }}</td>
         <td><a href="{% url 'gestion:selector_detalle' gestion.pk %}">Abrir</a></td>
       </tr>
     {% empty %}
-      <tr><td colspan="5">No hay solicitudes pendientes.</td></tr>
+      <tr><td colspan="6">No hay solicitudes en esta seccion.</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -4,7 +4,7 @@ from urllib.parse import quote_plus
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from django.utils import timezone
 
@@ -167,6 +167,44 @@ class GestionQuerySet(QuerySet):
             .con_orden_prioridad_administrativa()
         )
 
+    def decididas_corregibles_selector(self, perfil, ahora=None):
+        ahora = ahora or timezone.now()
+        vencimiento = ahora - timedelta(hours=24)
+        return (
+            self.select_related(
+                "solicitud",
+                "solicitud__centro_salud",
+                "motivo_rechazo",
+                "decidido_por",
+            )
+            .del_alcance(perfil)
+            .filter(
+                decision__in=(
+                    Gestion.Decision.ACEPTADA,
+                    Gestion.Decision.RECHAZADA,
+                ),
+                intentos_contacto=0,
+                cerrada_en__isnull=True,
+            )
+            .exclude(
+                decision=Gestion.Decision.RECHAZADA,
+                fecha_decision__lte=vencimiento,
+            )
+            .con_orden_prioridad_administrativa()
+        )
+
+    def no_aplica_selector(self, perfil):
+        return (
+            self.select_related(
+                "solicitud",
+                "solicitud__centro_salud",
+                "decidido_por",
+            )
+            .del_alcance(perfil)
+            .filter(decision=Gestion.Decision.NO_APLICA)
+            .order_by("-fecha_decision")
+        )
+
     def tabla_comunicador(self, perfil, ahora=None):
         ahora = ahora or timezone.now()
         vencimiento = ahora - timedelta(hours=24)
@@ -210,6 +248,13 @@ class Gestion(models.Model):
         NO_CONTACTADO = "NO_CONTACTADO", "No se logro contactar"
         AVISADO_WHATSAPP = "AVISADO_WHATSAPP", "Avisado por WhatsApp"
         SIN_AVISO = "SIN_AVISO", "Sin aviso"
+
+    class AccionContacto(models.TextChoices):
+        NO_CONTESTA = "NO_CONTESTA", "No contesta"
+        WHATSAPP = "WHATSAPP", "WhatsApp"
+        AGENDADA = "AGENDADA", "Agendada"
+        NO_ACEPTA = "NO_ACEPTA", "El paciente no acepta"
+        NO_CONTACTADO = "NO_CONTACTADO", "No se logro contactar"
 
     solicitud = models.OneToOneField(
         Solicitud,
@@ -258,6 +303,11 @@ class Gestion(models.Model):
         choices=MotivoCierre.choices,
         blank=True,
     )
+    ultima_accion_contacto = models.CharField(
+        max_length=20,
+        choices=AccionContacto.choices,
+        blank=True,
+    )
 
     objects = GestionQuerySet.as_manager()
 
@@ -280,6 +330,28 @@ class Gestion(models.Model):
     def puede_corregir_decision(self):
         return self.intentos_contacto == 0 and self.cerrada_en is None
 
+    @classmethod
+    def motivos_cierre_automatico(cls):
+        return (
+            cls.MotivoCierre.AVISADO_WHATSAPP,
+            cls.MotivoCierre.SIN_AVISO,
+        )
+
+    @property
+    def tiene_cierre_automatico(self):
+        return (
+            self.cerrada_en is not None
+            and self.motivo_cierre in self.motivos_cierre_automatico()
+        )
+
+    def rechazado_vencido(self, ahora=None):
+        ahora = ahora or timezone.now()
+        return (
+            self.decision == self.Decision.RECHAZADA
+            and self.fecha_decision is not None
+            and self.fecha_decision <= ahora - timedelta(hours=24)
+        )
+
     def clean(self):
         super().clean()
         if self.decision == self.Decision.ACEPTADA and not self.prioridad_clinica:
@@ -290,9 +362,14 @@ class Gestion(models.Model):
             raise ValidationError(
                 {"motivo_rechazo": "Debe indicar motivo de rechazo."}
             )
+        cita_con_cierre_automatico = (
+            self.decision == self.Decision.RECHAZADA
+            and self.motivo_cierre in self.motivos_cierre_automatico()
+        )
         if (
             self.fecha_hora_citacion
             and self.motivo_cierre != self.MotivoCierre.AGENDADA
+            and not cita_con_cierre_automatico
         ):
             raise ValidationError(
                 {
@@ -309,6 +386,25 @@ class Gestion(models.Model):
                 {"fecha_hora_citacion": "Debe indicar fecha y hora de citacion."}
             )
 
+    def _mutar_bloqueado(self, mutacion, campos):
+        with transaction.atomic():
+            bloqueada = (
+                type(self)
+                .objects.select_for_update()
+                .get(pk=self.pk)
+            )
+            guardar = mutacion(bloqueada)
+            if guardar:
+                bloqueada.full_clean()
+                bloqueada.save(update_fields=campos)
+
+        for nombre in campos:
+            campo = self._meta.get_field(nombre)
+            setattr(self, campo.attname, getattr(bloqueada, campo.attname))
+            if campo.is_relation:
+                self._state.fields_cache.pop(nombre, None)
+        return guardar
+
     def _registrar_decision(self, usuario):
         if not self.puede_corregir_decision:
             raise ValidationError(
@@ -324,82 +420,184 @@ class Gestion(models.Model):
             raise ValidationError(
                 {"prioridad_clinica": "Debe indicar prioridad clinica."}
             )
-        self._registrar_decision(usuario)
-        self.decision = self.Decision.ACEPTADA
-        self.prioridad_clinica = prioridad_clinica
-        self.motivo_rechazo = None
-        self.full_clean()
-        self.save()
+        def mutar(gestion):
+            gestion._registrar_decision(usuario)
+            gestion.decision = self.Decision.ACEPTADA
+            gestion.prioridad_clinica = prioridad_clinica
+            gestion.motivo_rechazo = None
+            return True
+
+        return self._mutar_bloqueado(
+            mutar,
+            [
+                "decision",
+                "prioridad_clinica",
+                "motivo_rechazo",
+                "decidido_por",
+                "fecha_decision",
+                "cerrada_en",
+                "motivo_cierre",
+            ],
+        )
 
     def rechazar(self, usuario, motivo):
         if motivo is None:
             raise ValidationError({"motivo_rechazo": "Debe indicar motivo de rechazo."})
-        self._registrar_decision(usuario)
-        self.decision = self.Decision.RECHAZADA
-        self.prioridad_clinica = ""
-        self.motivo_rechazo = motivo
-        self.full_clean()
-        self.save()
+        def mutar(gestion):
+            gestion._registrar_decision(usuario)
+            gestion.decision = self.Decision.RECHAZADA
+            gestion.prioridad_clinica = ""
+            gestion.motivo_rechazo = motivo
+            return True
+
+        return self._mutar_bloqueado(
+            mutar,
+            [
+                "decision",
+                "prioridad_clinica",
+                "motivo_rechazo",
+                "decidido_por",
+                "fecha_decision",
+                "cerrada_en",
+                "motivo_cierre",
+            ],
+        )
 
     def marcar_no_aplica(self, usuario):
-        self._registrar_decision(usuario)
-        self.decision = self.Decision.NO_APLICA
-        self.prioridad_clinica = ""
-        self.motivo_rechazo = None
-        self.full_clean()
-        self.save()
+        def mutar(gestion):
+            gestion._registrar_decision(usuario)
+            gestion.decision = self.Decision.NO_APLICA
+            gestion.prioridad_clinica = ""
+            gestion.motivo_rechazo = None
+            return True
 
-    def _registrar_intento(self, usuario, cerrar=False, motivo_cierre=""):
-        if self.cerrada_en is not None:
-            return
-        self.intentos_contacto += 1
-        self.fecha_ultimo_intento = timezone.now()
-        self.contactado_por = usuario
-        if cerrar:
-            self.cerrada_en = timezone.now()
-            self.motivo_cierre = motivo_cierre
-        self.full_clean()
-        self.save()
+        return self._mutar_bloqueado(
+            mutar,
+            [
+                "decision",
+                "prioridad_clinica",
+                "motivo_rechazo",
+                "decidido_por",
+                "fecha_decision",
+                "cerrada_en",
+                "motivo_cierre",
+            ],
+        )
+
+    def _registrar_intento(
+        self,
+        usuario,
+        accion,
+        cerrar=False,
+        motivo_cierre="",
+        fecha_hora_citacion=None,
+        registrar_whatsapp=False,
+    ):
+        def mutar(gestion):
+            ahora = timezone.now()
+            if gestion.cerrada_en is not None and not gestion.tiene_cierre_automatico:
+                return False
+            if (
+                accion == self.AccionContacto.NO_CONTESTA
+                and gestion.ultima_accion_contacto == accion
+            ):
+                return False
+            if registrar_whatsapp and gestion.aviso_whatsapp_en is not None:
+                return False
+
+            if gestion.cerrada_en is None and gestion.rechazado_vencido(ahora):
+                gestion._aplicar_cierre_automatico(ahora)
+
+            gestion.intentos_contacto += 1
+            gestion.fecha_ultimo_intento = ahora
+            gestion.contactado_por = usuario
+            gestion.ultima_accion_contacto = accion
+            if registrar_whatsapp:
+                gestion.aviso_whatsapp_en = ahora
+            if fecha_hora_citacion is not None:
+                gestion.fecha_hora_citacion = fecha_hora_citacion
+            if cerrar and gestion.cerrada_en is None:
+                gestion.cerrada_en = ahora
+                gestion.motivo_cierre = motivo_cierre
+            return True
+
+        return self._mutar_bloqueado(
+            mutar,
+            [
+                "intentos_contacto",
+                "fecha_ultimo_intento",
+                "contactado_por",
+                "ultima_accion_contacto",
+                "aviso_whatsapp_en",
+                "fecha_hora_citacion",
+                "cerrada_en",
+                "motivo_cierre",
+            ],
+        )
 
     def registrar_no_contesta(self, usuario):
-        self._registrar_intento(usuario)
+        return self._registrar_intento(usuario, self.AccionContacto.NO_CONTESTA)
 
     def registrar_click_whatsapp(self, usuario):
-        if self.aviso_whatsapp_en is not None:
-            return
-        self.aviso_whatsapp_en = timezone.now()
-        self._registrar_intento(usuario)
+        return self._registrar_intento(
+            usuario,
+            self.AccionContacto.WHATSAPP,
+            registrar_whatsapp=True,
+        )
 
     def registrar_agendada(self, usuario, fecha_hora):
         if fecha_hora is None:
             raise ValidationError(
                 {"fecha_hora_citacion": "Debe indicar fecha y hora de citacion."}
             )
-        self.fecha_hora_citacion = fecha_hora
-        self._registrar_intento(
-            usuario, cerrar=True, motivo_cierre=self.MotivoCierre.AGENDADA
+        return self._registrar_intento(
+            usuario,
+            self.AccionContacto.AGENDADA,
+            cerrar=True,
+            motivo_cierre=self.MotivoCierre.AGENDADA,
+            fecha_hora_citacion=fecha_hora,
         )
 
     def registrar_no_acepta(self, usuario):
-        self._registrar_intento(
-            usuario, cerrar=True, motivo_cierre=self.MotivoCierre.NO_ACEPTA
+        return self._registrar_intento(
+            usuario,
+            self.AccionContacto.NO_ACEPTA,
+            cerrar=True,
+            motivo_cierre=self.MotivoCierre.NO_ACEPTA,
         )
 
     def registrar_no_contactado(self, usuario):
-        self._registrar_intento(
-            usuario, cerrar=True, motivo_cierre=self.MotivoCierre.NO_CONTACTADO
+        return self._registrar_intento(
+            usuario,
+            self.AccionContacto.NO_CONTACTADO,
+            cerrar=True,
+            motivo_cierre=self.MotivoCierre.NO_CONTACTADO,
         )
 
-    def cerrar_rechazado_automatico(self, ahora=None):
-        ahora = ahora or timezone.now()
+    def _aplicar_cierre_automatico(self, ahora):
         self.cerrada_en = ahora
         self.motivo_cierre = (
             self.MotivoCierre.AVISADO_WHATSAPP
             if self.aviso_whatsapp_en
             else self.MotivoCierre.SIN_AVISO
         )
-        self.full_clean()
-        self.save()
+
+    def cerrar_rechazado_automatico(self, ahora=None):
+        ahora = ahora or timezone.now()
+
+        def mutar(gestion):
+            if (
+                gestion.decision != self.Decision.RECHAZADA
+                or gestion.cerrada_en is not None
+            ):
+                return False
+            gestion._aplicar_cierre_automatico(ahora)
+            return True
+
+        return self._mutar_bloqueado(
+            mutar,
+            ["cerrada_en", "motivo_cierre"],
+        )
 
     def url_whatsapp(self):
         telefono = self.solicitud.telefono
@@ -412,5 +610,5 @@ class Gestion(models.Model):
                 "Hola {nombre}, le contactamos desde su centro de salud por su "
                 "solicitud de morbilidad."
             )
-        mensaje = mensaje_base.format(nombre=self.solicitud.nombre)
+        mensaje = mensaje_base.replace("{nombre}", self.solicitud.nombre)
         return f"https://wa.me/{telefono.removeprefix('+')}?text={quote_plus(mensaje)}"

@@ -1,6 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -14,7 +15,33 @@ from .permisos import (
     puede_escribir_selector,
     puede_usar_comunicador,
     puede_usar_selector,
+    puede_ver_no_aplica,
 )
+
+
+def _gestion_para_post_comunicador_o_404(perfil, pk):
+    queryset = (
+        Gestion.objects.select_related("solicitud", "motivo_rechazo")
+        .del_alcance(perfil)
+        .filter(
+            Q(decision=Gestion.Decision.ACEPTADA, cerrada_en__isnull=True)
+            | Q(decision=Gestion.Decision.RECHAZADA, cerrada_en__isnull=True)
+            | Q(
+                decision=Gestion.Decision.RECHAZADA,
+                motivo_cierre__in=Gestion.motivos_cierre_automatico(),
+            )
+        )
+    )
+    return get_object_or_404(queryset, pk=pk)
+
+
+def _advertir_cierre_automatico(request, gestion):
+    if gestion.tiene_cierre_automatico or gestion.rechazado_vencido():
+        messages.warning(
+            request,
+            "La solicitud ya se habia cerrado automaticamente; "
+            "el registro se aplico igualmente.",
+        )
 
 @login_required
 def panel(request):
@@ -37,7 +64,15 @@ def selector_lista(request):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_selector(perfil):
         return redirect("gestion:sin_acceso")
-    gestiones = Gestion.objects.cola_selector(perfil)
+    mostrar_no_aplica = puede_ver_no_aplica(perfil)
+    seccion = request.GET.get("seccion", "pendientes")
+    if seccion == "decididas":
+        gestiones = Gestion.objects.decididas_corregibles_selector(perfil)
+    elif seccion == "no_aplica" and mostrar_no_aplica:
+        gestiones = Gestion.objects.no_aplica_selector(perfil)
+    else:
+        seccion = "pendientes"
+        gestiones = Gestion.objects.cola_selector(perfil)
     return render(
         request,
         "gestion/selector_lista.html",
@@ -45,6 +80,8 @@ def selector_lista(request):
             "perfil": perfil,
             "gestiones": gestiones,
             "puede_escribir": puede_escribir_selector(perfil),
+            "seccion": seccion,
+            "mostrar_no_aplica": mostrar_no_aplica,
         },
     )
 
@@ -101,7 +138,10 @@ def comunicador_detalle(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_comunicador(perfil):
         return redirect("gestion:sin_acceso")
-    gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
+    if request.method == "POST":
+        gestion = _gestion_para_post_comunicador_o_404(perfil, pk)
+    else:
+        gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
     puede_escribir = puede_escribir_comunicador(perfil)
     form = AccionComunicadorForm(request.POST or None)
     if request.method == "POST":
@@ -109,6 +149,7 @@ def comunicador_detalle(request, pk):
             return redirect("gestion:sin_acceso")
         if form.is_valid():
             form.guardar(gestion, request.user)
+            _advertir_cierre_automatico(request, gestion)
             messages.success(request, "Contacto registrado.")
             return redirect("gestion:comunicador_lista")
     return render(
@@ -129,10 +170,11 @@ def registrar_whatsapp(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_escribir_comunicador(perfil):
         return redirect("gestion:sin_acceso")
-    gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
+    gestion = _gestion_para_post_comunicador_o_404(perfil, pk)
     url = gestion.url_whatsapp()
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
     gestion.registrar_click_whatsapp(request.user)
+    _advertir_cierre_automatico(request, gestion)
     return HttpResponseRedirect(url)

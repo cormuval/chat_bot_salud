@@ -8,7 +8,7 @@ from django.core.management import call_command
 from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
 from django.http import Http404
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
@@ -545,6 +545,20 @@ class GestionModeloTests(TestCase):
         self.assertIsNotNone(gestion.fecha_ultimo_intento)
         self.assertIsNone(gestion.cerrada_en)
 
+    def test_no_contesta_duplicado_no_suma_otro_intento(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        gestion.registrar_no_contesta(self.usuario)
+        gestion.registrar_no_contesta(self.usuario)
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertEqual(
+            gestion.ultima_accion_contacto,
+            Gestion.AccionContacto.NO_CONTESTA,
+        )
+
     def test_click_whatsapp_duplicado_no_suma_otro_intento(self):
         gestion = crear_solicitud_base().gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
@@ -579,6 +593,17 @@ class GestionModeloTests(TestCase):
         self.assertTrue(url.startswith("https://wa.me/56949106239?text="))
         self.assertIn("Ana+Perez", url)
 
+    def test_url_whatsapp_no_falla_con_marcador_desconocido(self):
+        self.motivo.mensaje_paciente = "Hola {nombre}, centro {centro}."
+        self.motivo.save(update_fields=["mensaje_paciente"])
+        gestion = crear_solicitud_base(nombre="Ana Perez").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+
+        url = gestion.url_whatsapp()
+
+        self.assertIn("Ana+Perez", url)
+        self.assertIn("%7Bcentro%7D", url)
+
     def test_url_whatsapp_none_con_telefono_invalido(self):
         gestion = crear_solicitud_base(telefono="").gestion
         gestion.rechazar(self.usuario, self.motivo)
@@ -596,6 +621,65 @@ class GestionModeloTests(TestCase):
             fecha_decision=timezone.now() - timedelta(hours=25)
         )
         self.assertEqual(list(Gestion.objects.rechazados_vencidos()), [gestion])
+
+
+class GestionConcurrenciaTests(TransactionTestCase):
+    serialized_rollback = True
+
+    def setUp(self):
+        self.selector = User.objects.create_user("selector-concurrencia")
+        self.comunicador = User.objects.create_user("comunicador-concurrencia")
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+
+    def test_selector_obsoleto_no_sobrescribe_intento_del_comunicador(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.selector, Solicitud.Prioridad.MEDIA)
+        selector_obsoleto = Gestion.objects.get(pk=gestion.pk)
+
+        Gestion.objects.get(pk=gestion.pk).registrar_no_contesta(self.comunicador)
+
+        with self.assertRaises(ValidationError):
+            selector_obsoleto.rechazar(self.selector, self.motivo)
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
+        self.assertEqual(gestion.intentos_contacto, 1)
+
+    def test_dos_selectores_sin_contacto_conservan_ultimo_guardado(self):
+        gestion = crear_solicitud_base().gestion
+        primer_selector = Gestion.objects.get(pk=gestion.pk)
+        segundo_selector = Gestion.objects.get(pk=gestion.pk)
+
+        primer_selector.aceptar(self.selector, Solicitud.Prioridad.MEDIA)
+        segundo_selector.rechazar(self.selector, self.motivo)
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.RECHAZADA)
+        self.assertEqual(gestion.motivo_rechazo, self.motivo)
+        self.assertEqual(gestion.intentos_contacto, 0)
+
+    def test_comunicador_obsoleto_conserva_cierre_automatico(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.rechazar(self.selector, self.motivo)
+        comunicador_obsoleto = Gestion.objects.get(pk=gestion.pk)
+        momento_cierre = timezone.now()
+
+        Gestion.objects.get(pk=gestion.pk).cerrar_rechazado_automatico(
+            ahora=momento_cierre
+        )
+        comunicador_obsoleto.registrar_no_contesta(self.comunicador)
+
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.cerrada_en, momento_cierre)
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.SIN_AVISO)
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertEqual(
+            gestion.ultima_accion_contacto,
+            Gestion.AccionContacto.NO_CONTESTA,
+        )
 
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
@@ -647,6 +731,87 @@ class SelectorViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(list(response.context["gestiones"]), [urgente, baja])
+
+    def test_lista_permite_navegar_decididas_corregibles_y_no_aplica(self):
+        pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
+        corregible = crear_solicitud_base(
+            centro_salud=self.centro, nombre="Caso corregible"
+        ).gestion
+        corregible.aceptar(self.usuario, Solicitud.Prioridad.ALTA)
+        contactada = crear_solicitud_base(
+            centro_salud=self.centro, nombre="Caso contactado"
+        ).gestion
+        contactada.rechazar(self.usuario, self.motivo)
+        contactada.registrar_no_contesta(self.usuario)
+        no_aplica = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica.marcar_no_aplica(self.usuario)
+
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(list(response.context["gestiones"]), [pendiente])
+        self.assertContains(response, "?seccion=decididas")
+        self.assertContains(response, "?seccion=no_aplica")
+
+        response = self.client.get(
+            "/selector/?seccion=decididas", HTTP_HOST="gestion.localhost"
+        )
+        self.assertEqual(list(response.context["gestiones"]), [corregible])
+        self.assertNotContains(response, contactada.solicitud.nombre)
+
+        response = self.client.get(
+            "/selector/?seccion=no_aplica", HTTP_HOST="gestion.localhost"
+        )
+        self.assertEqual(list(response.context["gestiones"]), [no_aplica])
+
+    @patch("gestion.views.puede_ver_no_aplica", return_value=False)
+    def test_lista_oculta_no_aplica_si_el_perfil_no_puede_verlo(self, _permiso):
+        no_aplica = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica.marcar_no_aplica(self.usuario)
+
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+
+        self.assertNotContains(response, "?seccion=no_aplica")
+        response = self.client.get(
+            "/selector/?seccion=no_aplica", HTTP_HOST="gestion.localhost"
+        )
+        self.assertEqual(response.context["seccion"], "pendientes")
+        self.assertNotIn(no_aplica, response.context["gestiones"])
+
+    def test_detalle_muestra_datos_clinicos_y_decision_en_solo_lectura(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            edad=67,
+            sexo=Solicitud.Sexo.FEMENINO,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+            credendencial_cuidador_discapacidad=True,
+            credencial_cuidador_discapacidad_foto="data:image/png;base64,AAAA",
+            Neurodivergente_prais_gestante=True,
+            Neurodivergente_prais_gestante_tipo=Solicitud.TipoCondicion.OTRO,
+            Neurodivergente_prais_gestante_otro="Condicion especial",
+        ).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        self.perfil.rol = PerfilUsuario.Rol.SUPERVISOR_CENTRO
+        self.perfil.save(update_fields=["rol"])
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/", HTTP_HOST="gestion.localhost"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        for contenido in (
+            "67",
+            "Femenino",
+            str(self.centro),
+            "Urgente",
+            "Condicion especial",
+            "Credencial declarada",
+            "Foto adjunta",
+            "Rechazada",
+            self.motivo.nombre,
+            self.usuario.email,
+        ):
+            self.assertContains(response, contenido)
+        self.assertContains(response, "Fecha de decision")
+        self.assertContains(response, "Vista de solo lectura")
 
     def test_aceptar_registra_prioridad_clinica(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -760,6 +925,51 @@ class ComunicadorViewsTests(TestCase):
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertIsNone(gestion.cerrada_en)
+
+    def test_rechazado_vencido_acepta_post_y_muestra_advertencia(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=25)
+        )
+
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/",
+            {"accion": "NO_CONTESTA"},
+            HTTP_HOST="gestion.localhost",
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ya se habia cerrado")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.SIN_AVISO)
+        self.assertIsNotNone(gestion.cerrada_en)
+
+    def test_rechazado_autocerrado_acepta_post_sin_perder_cierre(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        momento_cierre = timezone.now()
+        gestion.cerrar_rechazado_automatico(ahora=momento_cierre)
+
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/",
+            {"accion": "NO_ACEPTA"},
+            HTTP_HOST="gestion.localhost",
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ya se habia cerrado")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertEqual(gestion.cerrada_en, momento_cierre)
+        self.assertEqual(gestion.motivo_cierre, Gestion.MotivoCierre.SIN_AVISO)
+        self.assertEqual(
+            gestion.ultima_accion_contacto,
+            Gestion.AccionContacto.NO_ACEPTA,
+        )
 
     def test_agendada_cierra_con_fecha_hora(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
