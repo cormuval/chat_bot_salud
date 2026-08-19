@@ -1,12 +1,34 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.db import IntegrityError, transaction
+from django.core.exceptions import ValidationError
+from django.core.management.color import no_style
+from django.db import IntegrityError, connection, transaction
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
-from gestion.models import PerfilUsuario
-from solicitudes.models import Centro
+from gestion.models import Gestion, MotivoRechazo, PerfilUsuario
+from solicitudes.models import Centro, Solicitud
+
+
+def crear_solicitud_base(**overrides):
+    data = {
+        "nombre": "Ana Maria Perez",
+        "rut": "25747311-2",
+        "edad": 34,
+        "sexo": "N",
+        "telefono": "+56949106239",
+        "centro_salud": Centro.objects.get(pk=620),
+        "acepta_terminos": True,
+        "motivo": "consulta medica",
+        "detalle_motivo": "dolor de garganta",
+        "priorizacion_solicitud": Solicitud.Prioridad.BAJA,
+        "puntaje_prioridad": 0,
+    }
+    data.update(overrides)
+    return Solicitud.objects.create(**data)
 
 
 class PerfilUsuarioTests(TestCase):
@@ -324,3 +346,106 @@ class PanelRequiereLoginTests(TestCase):
         response = self.client.get("/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
         self.assertIn("/sin-acceso/", response["Location"])
+
+
+class GestionModeloTests(TestCase):
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        # InnoDB no revierte AUTO_INCREMENT al deshacer la transaccion de TestCase.
+        sql = connection.ops.sequence_reset_by_name_sql(
+            no_style(),
+            [{"table": Solicitud._meta.db_table, "column": Solicitud._meta.pk.column}],
+        )
+        with connection.cursor() as cursor:
+            for sentencia in sql:
+                cursor.execute(sentencia)
+
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user(
+            "selector@cmvalparaiso.cl", email="selector@cmvalparaiso.cl"
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, su solicitud no incluye informacion suficiente.",
+            orden=10,
+        )
+
+    def test_senal_crea_gestion_pendiente_para_solicitud_nueva(self):
+        solicitud = crear_solicitud_base()
+        self.assertEqual(solicitud.gestion.decision, Gestion.Decision.PENDIENTE)
+
+    def test_senal_no_duplica_gestion_al_actualizar_solicitud(self):
+        solicitud = crear_solicitud_base()
+        primera_id = solicitud.gestion.pk
+        solicitud.detalle_motivo = "detalle actualizado"
+        solicitud.save()
+        self.assertEqual(Gestion.objects.filter(solicitud=solicitud).count(), 1)
+        self.assertEqual(solicitud.gestion.pk, primera_id)
+
+    def test_aceptar_exige_prioridad_clinica_y_limpia_rechazo(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.ALTA)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
+        self.assertEqual(gestion.prioridad_clinica, Solicitud.Prioridad.ALTA)
+        self.assertIsNone(gestion.motivo_rechazo)
+        self.assertEqual(gestion.decidido_por, self.usuario)
+        self.assertIsNotNone(gestion.fecha_decision)
+
+    def test_rechazar_exige_motivo_y_limpia_prioridad_clinica(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.RECHAZADA)
+        self.assertEqual(gestion.motivo_rechazo, self.motivo)
+        self.assertEqual(gestion.prioridad_clinica, "")
+
+    def test_no_aplica_sale_del_flujo_sin_datos_de_comunicador(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.marcar_no_aplica(self.usuario)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.NO_APLICA)
+        self.assertEqual(gestion.prioridad_clinica, "")
+        self.assertIsNone(gestion.motivo_rechazo)
+
+    def test_no_permite_aceptar_sin_prioridad(self):
+        gestion = crear_solicitud_base().gestion
+        with self.assertRaises(ValidationError):
+            gestion.aceptar(self.usuario, "")
+
+    def test_no_permite_rechazar_sin_motivo(self):
+        gestion = crear_solicitud_base().gestion
+        with self.assertRaises(ValidationError):
+            gestion.rechazar(self.usuario, None)
+
+    def test_registrar_no_contesta_suma_intento_sin_cerrar(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        self.assertIsNotNone(gestion.fecha_ultimo_intento)
+        self.assertIsNone(gestion.cerrada_en)
+
+    def test_url_whatsapp_reemplaza_nombre_y_codifica_mensaje(self):
+        gestion = crear_solicitud_base(nombre="Ana Perez").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        url = gestion.url_whatsapp()
+        self.assertTrue(url.startswith("https://wa.me/56949106239?text="))
+        self.assertIn("Ana+Perez", url)
+
+    def test_url_whatsapp_none_con_telefono_invalido(self):
+        gestion = crear_solicitud_base(telefono="").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        self.assertIsNone(gestion.url_whatsapp())
+
+    def test_rechazados_vencidos_usa_fecha_decision_mas_24_horas(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=25)
+        )
+        self.assertEqual(list(Gestion.objects.rechazados_vencidos()), [gestion])
