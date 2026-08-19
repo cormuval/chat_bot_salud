@@ -220,8 +220,8 @@ se pierde el historial de acciones.
 
 El flujo operativo vive en el host de gestion:
 
-- Selector: `http://127.0.0.1:8000/selector/`
-- Comunicador: `http://127.0.0.1:8000/comunicador/`
+- Selector: `http://gestion.localhost:8000/selector/`
+- Comunicador: `http://gestion.localhost:8000/comunicador/`
 
 El cierre automatico de rechazados se ejecuta con:
 
