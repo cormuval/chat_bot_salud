@@ -943,7 +943,7 @@ class DecisionSelectorForm(forms.Form):
 
 - [ ] **Step 4: Implementar vistas del selector**
 
-En `gestion/views.py`, importar `render`, `get_object_or_404`, `messages`, formularios y permisos; reemplazar `panel` para redirigir a selector/comunicador segun rol, y agregar:
+En `gestion/views.py`, importar `render`, `messages`, formularios y permisos; mantener `panel` tal como esta hasta Task 6 y agregar:
 
 ```python
 from django.contrib import messages
