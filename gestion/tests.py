@@ -5,11 +5,20 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
+from django.http import Http404
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
 from gestion.models import Gestion, MotivoRechazo, PerfilUsuario
+from gestion.permisos import (
+    gestion_alcanzable_o_404,
+    puede_escribir_comunicador,
+    puede_escribir_selector,
+    puede_usar_comunicador,
+    puede_usar_selector,
+    puede_ver_no_aplica,
+)
 from solicitudes.models import Centro, Solicitud
 
 
@@ -29,6 +38,85 @@ def crear_solicitud_base(**overrides):
     }
     data.update(overrides)
     return Solicitud.objects.create(**data)
+
+
+class PermisosGestionTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        # InnoDB no revierte AUTO_INCREMENT al deshacer la transaccion de TestCase.
+        sql = connection.ops.sequence_reset_by_name_sql(
+            no_style(),
+            [{"table": Solicitud._meta.db_table, "column": Solicitud._meta.pk.column}],
+        )
+        with connection.cursor() as cursor:
+            for sentencia in sql:
+                cursor.execute(sentencia)
+
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.otro_centro = Centro.objects.get(pk=621)
+
+    def _perfil(self, rol, centro=None):
+        usuario = User.objects.create_user(
+            f"{rol.lower()}-{User.objects.count()}@cmvalparaiso.cl"
+        )
+        return PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=rol,
+            centro=centro or self.centro,
+        )
+
+    def test_roles_de_escritura_selector(self):
+        roles_si = [PerfilUsuario.Rol.SELECTOR, PerfilUsuario.Rol.FULL, PerfilUsuario.Rol.SOME]
+        roles_no = [
+            PerfilUsuario.Rol.COMUNICADOR,
+            PerfilUsuario.Rol.SUPERVISOR_CENTRO,
+            PerfilUsuario.Rol.SUPERVISOR_DAS,
+            PerfilUsuario.Rol.ADMIN,
+        ]
+        for rol in roles_si:
+            self.assertTrue(puede_escribir_selector(self._perfil(rol)))
+        for rol in roles_no:
+            self.assertFalse(puede_escribir_selector(self._perfil(rol)))
+
+    def test_roles_de_escritura_comunicador(self):
+        roles_si = [PerfilUsuario.Rol.COMUNICADOR, PerfilUsuario.Rol.FULL, PerfilUsuario.Rol.SOME]
+        roles_no = [
+            PerfilUsuario.Rol.SELECTOR,
+            PerfilUsuario.Rol.SUPERVISOR_CENTRO,
+            PerfilUsuario.Rol.SUPERVISOR_DAS,
+            PerfilUsuario.Rol.ADMIN,
+        ]
+        for rol in roles_si:
+            self.assertTrue(puede_escribir_comunicador(self._perfil(rol)))
+        for rol in roles_no:
+            self.assertFalse(puede_escribir_comunicador(self._perfil(rol)))
+
+    def test_supervisores_y_admin_pueden_usar_pantallas_en_solo_lectura(self):
+        for rol in [PerfilUsuario.Rol.SUPERVISOR_CENTRO, PerfilUsuario.Rol.SUPERVISOR_DAS, PerfilUsuario.Rol.ADMIN]:
+            perfil = self._perfil(rol)
+            self.assertTrue(puede_usar_selector(perfil))
+            self.assertTrue(puede_usar_comunicador(perfil))
+            self.assertFalse(puede_escribir_selector(perfil))
+            self.assertFalse(puede_escribir_comunicador(perfil))
+
+    def test_selector_no_usa_comunicador_y_comunicador_no_usa_selector(self):
+        self.assertTrue(puede_usar_selector(self._perfil(PerfilUsuario.Rol.SELECTOR)))
+        self.assertFalse(puede_usar_comunicador(self._perfil(PerfilUsuario.Rol.SELECTOR)))
+        self.assertFalse(puede_usar_selector(self._perfil(PerfilUsuario.Rol.COMUNICADOR)))
+        self.assertTrue(puede_usar_comunicador(self._perfil(PerfilUsuario.Rol.COMUNICADOR)))
+
+    def test_roles_que_ven_no_aplica(self):
+        for rol in [PerfilUsuario.Rol.SELECTOR, PerfilUsuario.Rol.FULL, PerfilUsuario.Rol.SOME, PerfilUsuario.Rol.SUPERVISOR_CENTRO, PerfilUsuario.Rol.SUPERVISOR_DAS, PerfilUsuario.Rol.ADMIN]:
+            self.assertTrue(puede_ver_no_aplica(self._perfil(rol)))
+        self.assertFalse(puede_ver_no_aplica(self._perfil(PerfilUsuario.Rol.COMUNICADOR)))
+
+    def test_gestion_fuera_de_alcance_devuelve_404(self):
+        gestion = crear_solicitud_base(centro_salud=self.otro_centro).gestion
+        perfil = self._perfil(PerfilUsuario.Rol.SELECTOR, centro=self.centro)
+        with self.assertRaises(Http404):
+            gestion_alcanzable_o_404(perfil, gestion.pk)
 
 
 class PerfilUsuarioTests(TestCase):
