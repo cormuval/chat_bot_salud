@@ -216,6 +216,24 @@ Para dar de alta a alguien, desde el admin en el subdominio de gestion
 Para revocar el acceso, desmarcar `activo` en el perfil. No borrar el usuario:
 se pierde el historial de acciones.
 
+## Modulo de seleccion: operacion local
+
+El flujo operativo vive en el host de gestion:
+
+- Selector: `http://gestion.localhost:8000/selector/`
+- Comunicador: `http://gestion.localhost:8000/comunicador/`
+
+El cierre automatico de rechazados se ejecuta con:
+
+```bash
+.venv/bin/python manage.py cerrar_rechazados
+```
+
+En produccion debe programarse cada hora por cron o por el scheduler disponible.
+La vista del comunicador filtra en vivo los rechazados vencidos, asi que una
+caida del cron no muestra trabajo vencido; solo retrasa el dato historico de
+`cerrada_en` y `motivo_cierre`.
+
 ### Configuracion de Google Cloud Console
 
 Se necesita un **OAuth 2.0 Client ID** tipo *Web application*. Redirect URIs

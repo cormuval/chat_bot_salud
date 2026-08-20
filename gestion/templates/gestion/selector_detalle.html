@@ -1,0 +1,54 @@
+{% extends "gestion/base.html" %}
+{% block title %}Solicitud {{ gestion.solicitud_id }}{% endblock %}
+{% block content %}
+<h1>{{ gestion.solicitud.nombre }}</h1>
+<dl>
+  <dt>RUT</dt><dd>{{ gestion.solicitud.rut }}</dd>
+  <dt>Telefono</dt><dd>{{ gestion.solicitud.telefono }}</dd>
+  <dt>Edad</dt><dd>{{ gestion.solicitud.edad }}</dd>
+  <dt>Sexo</dt><dd>{{ gestion.solicitud.get_sexo_display }}</dd>
+  <dt>Centro</dt><dd>{{ gestion.solicitud.centro_salud }}</dd>
+  <dt>Prioridad administrativa</dt><dd>{{ gestion.solicitud.get_priorizacion_solicitud_display }}</dd>
+  <dt>Condiciones declaradas</dt>
+  <dd>
+    {% if gestion.solicitud.Neurodivergente_prais_gestante %}
+      {{ gestion.solicitud.get_Neurodivergente_prais_gestante_tipo_display }}
+      {% if gestion.solicitud.Neurodivergente_prais_gestante_otro %}- {{ gestion.solicitud.Neurodivergente_prais_gestante_otro }}{% endif %}
+    {% else %}
+      Sin condiciones declaradas
+    {% endif %}
+  </dd>
+  <dt>Credencial de cuidador</dt>
+  <dd>
+    {% if gestion.solicitud.credendencial_cuidador_discapacidad %}
+      Credencial declarada.
+      {% if gestion.solicitud.credencial_cuidador_discapacidad_foto %}Foto adjunta.{% else %}Sin foto adjunta.{% endif %}
+      {% if foto_credencial_data_url %}
+        <img src="{{ foto_credencial_data_url }}" alt="Foto de credencial de cuidador" style="display: block; max-width: 100%; max-height: 24rem; object-fit: contain;">
+      {% endif %}
+    {% else %}
+      No declarada.
+    {% endif %}
+  </dd>
+  <dt>Motivo de consulta</dt><dd>{{ gestion.solicitud.motivo }}</dd>
+  <dt>Detalle</dt><dd>{{ gestion.solicitud.detalle_motivo }}</dd>
+  <dt>Decision actual</dt><dd>{{ gestion.get_decision_display }}</dd>
+  <dt>Prioridad clinica</dt><dd>{{ gestion.get_prioridad_clinica_display|default:"No asignada" }}</dd>
+  <dt>Motivo de rechazo</dt><dd>{{ gestion.motivo_rechazo|default:"No aplica" }}</dd>
+  <dt>Decidido por</dt>
+  <dd>
+    {% if gestion.decidido_por %}{{ gestion.decidido_por.email|default:gestion.decidido_por.username }}{% else %}Sin decision{% endif %}
+  </dd>
+  <dt>Fecha de decision</dt><dd>{{ gestion.fecha_decision|default:"Sin decision" }}</dd>
+</dl>
+{% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+{% if puede_escribir %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Guardar decision</button>
+  </form>
+{% else %}
+  <p>Vista de solo lectura.</p>
+{% endif %}
+{% endblock %}
