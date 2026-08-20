@@ -921,7 +921,26 @@ class SelectorViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "?fragmento=1")
-        self.assertContains(response, f'action="/selector/{gestion.pk}/"', html=False)
+        self.assertContains(
+            response,
+            f'action="/selector/{gestion.pk}/?seccion=pendientes"',
+            html=False,
+        )
+
+    def test_detalle_completo_conserva_seccion_en_acciones_sin_javascript(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?seccion=decididas",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(
+            response,
+            f'action="/selector/{gestion.pk}/?seccion=decididas"',
+            html=False,
+        )
 
     def test_rechazar_registra_motivo(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1096,6 +1115,26 @@ class SelectorViewsTests(TestCase):
         self.assertContains(response, 'data-selector-source-section="decididas"', html=False)
         self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
         self.assertContains(response, 'data-selector-row-action="keep"', html=False)
+        self.assertContains(response, 'data-selector-correction-text="quedan', html=False)
+
+    def test_post_sin_fragmento_selector_redirige_a_seccion_de_origen(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?seccion=decididas",
+            {
+                "decision": Gestion.Decision.RECHAZADA,
+                "motivo_rechazo": self.motivo.pk,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertRedirects(
+            response,
+            "/selector/?seccion=decididas",
+            fetch_redirect_response=False,
+        )
 
     def test_post_fragmento_selector_ultimo_devuelve_cola_vacia(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1106,7 +1145,7 @@ class SelectorViewsTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-fragment-kind="selector-empty"', html=False)
-        self.assertContains(response, "No quedan casos pendientes")
+        self.assertContains(response, "No quedan casos en esta seccion")
 
     def test_post_fragmento_selector_con_error_devuelve_mismo_parcial(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1795,7 +1834,11 @@ class GestionAccesibilidadMarkupTests(TestCase):
     def test_filas_clickeables_conservan_enlace_real(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
-        self.assertContains(response, f'href="/selector/{gestion.pk}/"', html=False)
+        self.assertContains(
+            response,
+            f'href="/selector/{gestion.pk}/?seccion=pendientes"',
+            html=False,
+        )
         self.assertContains(
             response,
             f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
@@ -1838,9 +1881,17 @@ class GestionAccesibilidadMarkupTests(TestCase):
         ).read_text()
         self.assertNotIn("form.submit()", javascript)
         self.assertIn("data-selector-counter", javascript)
+        self.assertIn("data-selector-correction", javascript)
+        self.assertIn("dialogRequestInFlight", javascript)
+        self.assertIn("setDialogButtonsDisabled", javascript)
         self.assertIn("data-dialog-focus", javascript)
         self.assertIn("data-dialog-error-focus", javascript)
         self.assertIn("No se pudo guardar. Intente nuevamente.", javascript)
+        submit_fragment = javascript[javascript.index("async function submitFragmentForm") :]
+        self.assertLess(
+            submit_fragment.index("const previousId = dialog"),
+            submit_fragment.index("const response = await fetch"),
+        )
 
     def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
         vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"

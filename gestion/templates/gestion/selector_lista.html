@@ -50,7 +50,7 @@
         <td data-label="Motivo"><span class="truncate">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
         <td data-label="Fecha"><time title="{{ gestion.solicitud.date_solicitud }}">{{ gestion.solicitud.date_solicitud|tiempo_relativo }}</time></td>
         {% if seccion == "decididas" %}
-          <td data-label="Correccion">
+          <td data-label="Correccion" data-selector-correction>
             {% if gestion.decision == "RECHAZADA" %}
               <span class="warning-text">{{ gestion|horas_restantes_rechazo }}</span>
             {% else %}
@@ -58,7 +58,7 @@
             {% endif %}
           </td>
         {% endif %}
-        <td data-label="Abrir"><a href="{% url 'gestion:selector_detalle' gestion.pk %}">Abrir</a></td>
+        <td data-label="Abrir"><a href="{% url 'gestion:selector_detalle' gestion.pk %}?seccion={{ seccion }}">Abrir</a></td>
       </tr>
     {% empty %}
       <tr><td colspan="{% if mostrar_columna_centro %}{% if seccion == "decididas" %}7{% else %}6{% endif %}{% else %}{% if seccion == "decididas" %}6{% else %}5{% endif %}{% endif %}"><div class="empty-state">No hay solicitudes en esta seccion.</div></td></tr>

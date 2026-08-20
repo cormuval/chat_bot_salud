@@ -9,6 +9,7 @@
   document.body.appendChild(dialog);
 
   let lastTrigger = null;
+  let dialogRequestInFlight = false;
 
   function closeDialog() {
     dialog.close();
@@ -29,8 +30,8 @@
     if (focusTarget) focusTarget.focus();
   }
 
-  function setFormButtonsDisabled(form, disabled) {
-    form.querySelectorAll("button").forEach((button) => {
+  function setDialogButtonsDisabled(disabled) {
+    dialog.querySelectorAll("[data-fragment-form] button").forEach((button) => {
       button.disabled = disabled;
     });
   }
@@ -67,6 +68,14 @@
     if (destino !== origen) ajustarContadorSelector(destino, 1);
   }
 
+  function actualizarFilaConservada(currentId, fragmentRoot) {
+    if (!currentId) return;
+    const row = document.querySelector(`[data-row-id="${currentId}"]`);
+    const correction = row?.querySelector("[data-selector-correction]");
+    if (!correction || !fragmentRoot?.dataset.selectorCorrectionText) return;
+    correction.textContent = fragmentRoot.dataset.selectorCorrectionText;
+  }
+
   async function loadFragment(url) {
     const response = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
     if (!response.ok) throw new Error("No se pudo cargar el detalle.");
@@ -77,31 +86,39 @@
   }
 
   async function submitFragmentForm(form, submitter) {
-    setFormButtonsDisabled(form, true);
-    const data = new FormData(form);
-    if (submitter && submitter.name) data.set(submitter.name, submitter.value);
-    const action = submitter && submitter.formAction ? submitter.formAction : form.action;
-    const response = await fetch(action, {
-      method: "POST",
-      body: data,
-      headers: { "X-Requested-With": "fetch" },
-    });
-    if (!response.ok) {
-      throw new Error("No se pudo guardar.");
-    }
+    if (dialogRequestInFlight) return;
+    dialogRequestInFlight = true;
     const previousId = dialog
       .querySelector("[data-current-row-id]")
       ?.getAttribute("data-current-row-id");
-    dialog.innerHTML = await response.text();
-    const confirmation = dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]');
-    if (confirmation?.dataset.caseResolved === "true" && previousId) removeResolvedRow(previousId);
-    const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
-    if (fragmentRoot?.dataset.selectorRowAction === "remove") {
-      removeResolvedRow(previousId);
-      actualizarContadoresSelector(fragmentRoot);
+    setDialogButtonsDisabled(true);
+    const data = new FormData(form);
+    if (submitter && submitter.name) data.set(submitter.name, submitter.value);
+    const action = submitter && submitter.formAction ? submitter.formAction : form.action;
+    try {
+      const response = await fetch(action, {
+        method: "POST",
+        body: data,
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!response.ok) {
+        throw new Error("No se pudo guardar.");
+      }
+      dialog.innerHTML = await response.text();
+      const confirmation = dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]');
+      if (confirmation?.dataset.caseResolved === "true" && previousId) removeResolvedRow(previousId);
+      const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
+      if (fragmentRoot?.dataset.selectorRowAction === "remove") {
+        removeResolvedRow(previousId);
+        actualizarContadoresSelector(fragmentRoot);
+      } else if (fragmentRoot?.dataset.selectorRowAction === "keep") {
+        actualizarFilaConservada(previousId, fragmentRoot);
+      }
+      bindDialog();
+      focusDialogContent();
+    } finally {
+      dialogRequestInFlight = false;
     }
-    bindDialog();
-    focusDialogContent();
   }
 
   function bindDialog() {
@@ -112,7 +129,7 @@
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         submitFragmentForm(form, event.submitter).catch(() => {
-          setFormButtonsDisabled(form, false);
+          setDialogButtonsDisabled(false);
           mostrarErrorDeEnvio();
         });
       });

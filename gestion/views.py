@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
@@ -56,6 +57,15 @@ def _advertir_cierre_automatico(request, gestion):
             "La solicitud ya se habia cerrado automaticamente; "
             "el registro se aplico igualmente.",
         )
+
+
+def _texto_correccion_selector(gestion):
+    if gestion.decision == Gestion.Decision.RECHAZADA:
+        from .templatetags.gestion_ui import horas_restantes_rechazo
+
+        return horas_restantes_rechazo(gestion)
+    return "Sin intentos registrados"
+
 
 @login_required
 def panel(request):
@@ -179,10 +189,15 @@ def selector_detalle(request, pk):
                             "seccion_origen": seccion_origen,
                             "seccion_destino": seccion_destino,
                             "accion_fila": accion_fila,
+                            "texto_correccion_fila": _texto_correccion_selector(gestion),
                         },
                     )
                 messages.success(request, "Decision registrada.")
-                return redirect("gestion:selector_lista")
+                if seccion_origen == "pendientes":
+                    return redirect("gestion:selector_lista")
+                return HttpResponseRedirect(
+                    f"{reverse('gestion:selector_lista')}?seccion={seccion_origen}"
+                )
             except ValidationError as exc:
                 form.add_error(None, exc)
     return render(
@@ -199,6 +214,7 @@ def selector_detalle(request, pk):
             "seccion_origen": seccion_origen,
             "seccion_destino": seccion_origen,
             "accion_fila": "keep",
+            "texto_correccion_fila": _texto_correccion_selector(gestion),
         },
     )
 

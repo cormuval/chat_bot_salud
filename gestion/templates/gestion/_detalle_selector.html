@@ -1,5 +1,5 @@
 {% load gestion_ui %}
-<article class="modal-panel" data-fragment-kind="selector-detail" data-current-row-id="{{ gestion.pk }}" data-selector-source-section="{{ seccion_origen }}" data-selector-destination-section="{{ seccion_destino }}" data-selector-row-action="{{ accion_fila }}">
+<article class="modal-panel" data-fragment-kind="selector-detail" data-current-row-id="{{ gestion.pk }}" data-selector-source-section="{{ seccion_origen }}" data-selector-destination-section="{{ seccion_destino }}" data-selector-row-action="{{ accion_fila }}" data-selector-correction-text="{{ texto_correccion_fila }}">
   {% if mensaje_resultado %}<p class="status-badge">{{ mensaje_resultado }}</p>{% endif %}
   <header class="modal-header">
     <div>
@@ -63,7 +63,7 @@
     {% if puede_escribir %}
       {% for prioridad, etiqueta in form.fields.prioridad_clinica.choices %}
         {% if prioridad %}
-          <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1&amp;seccion={{ seccion_origen }}{% endif %}" data-fragment-form aria-label="Guardar decision {{ etiqueta }}">
+          <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?{% if es_fragmento %}fragmento=1&amp;{% endif %}seccion={{ seccion_origen }}" data-fragment-form aria-label="Guardar decision {{ etiqueta }}">
             {% csrf_token %}
             <input type="hidden" name="prioridad_clinica" value="{{ prioridad }}">
             <button type="submit" name="decision" value="ACEPTADA">Aceptar {{ etiqueta }}</button>
@@ -72,7 +72,7 @@
       {% endfor %}
       <details class="reject-box"{% if form.motivo_rechazo.errors %} open{% endif %}>
         <summary>Rechazar</summary>
-        <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1&amp;seccion={{ seccion_origen }}{% endif %}" data-fragment-form>
+        <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?{% if es_fragmento %}fragmento=1&amp;{% endif %}seccion={{ seccion_origen }}" data-fragment-form>
           {% csrf_token %}
           <input type="hidden" name="decision" value="RECHAZADA">
           {{ form.motivo_rechazo }}
@@ -80,7 +80,7 @@
           {% if form.motivo_rechazo.errors %}<div data-dialog-error-focus tabindex="-1">{{ form.motivo_rechazo.errors }}</div>{% endif %}
         </form>
       </details>
-      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1&amp;seccion={{ seccion_origen }}{% endif %}" data-fragment-form>
+      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?{% if es_fragmento %}fragmento=1&amp;{% endif %}seccion={{ seccion_origen }}" data-fragment-form>
         {% csrf_token %}
         <button type="submit" name="decision" value="NO_APLICA">No aplica</button>
       </form>
