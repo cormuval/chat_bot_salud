@@ -3,10 +3,10 @@
   {% if mensaje_resultado %}<p class="status-badge">{{ mensaje_resultado }}</p>{% endif %}
   <header class="modal-header">
     <div>
-      <h2>{{ gestion.solicitud.nombre }}</h2>
+      <h2 data-dialog-focus tabindex="-1">{{ gestion.solicitud.nombre }}</h2>
       <p>{{ gestion.solicitud.rut }} - {{ gestion.solicitud.telefono }} - {{ gestion.solicitud.centro_salud }}</p>
     </div>
-    <button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>
+    {% if es_fragmento %}<button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>{% endif %}
   </header>
   <div class="modal-body">
     <section class="case-summary">
@@ -28,6 +28,10 @@
       <dt>Motivo de rechazo</dt><dd>{{ gestion.motivo_rechazo|default:"No aplica" }}</dd>
       <dt>Decidido por</dt><dd>{% if gestion.decidido_por %}{{ gestion.decidido_por.email|default:gestion.decidido_por.username }}{% else %}Sin decision{% endif %}</dd>
       <dt>Fecha de decision</dt><dd>{{ gestion.fecha_decision|default:"Sin decision" }}</dd>
+      <dt>Intentos de contacto</dt><dd>{{ gestion.intentos_contacto }}</dd>
+      <dt>Contactado por</dt><dd>{% if gestion.contactado_por %}{{ gestion.contactado_por.email|default:gestion.contactado_por.username }}{% else %}Sin contacto{% endif %}</dd>
+      <dt>Ultima accion de contacto</dt><dd>{{ gestion.get_ultima_accion_contacto_display|default:"Sin contacto" }}</dd>
+      <dt>Motivo de cierre</dt><dd>{{ gestion.get_motivo_cierre_display|default:"Abierto" }}</dd>
     </dl>
     <section>
       <h3>Condiciones declaradas</h3>
@@ -57,14 +61,15 @@
   <footer class="modal-actions">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
     {% if puede_escribir %}
-      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form aria-label="Guardar decision">
-        {% csrf_token %}
-        {% for prioridad, etiqueta in form.fields.prioridad_clinica.choices %}
-          {% if prioridad %}
-            <button type="submit" name="decision" value="ACEPTADA" data-extra-name="prioridad_clinica" data-extra-value="{{ prioridad }}">Aceptar {{ etiqueta }}</button>
-          {% endif %}
-        {% endfor %}
-      </form>
+      {% for prioridad, etiqueta in form.fields.prioridad_clinica.choices %}
+        {% if prioridad %}
+          <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form aria-label="Guardar decision {{ etiqueta }}">
+            {% csrf_token %}
+            <input type="hidden" name="prioridad_clinica" value="{{ prioridad }}">
+            <button type="submit" name="decision" value="ACEPTADA">Aceptar {{ etiqueta }}</button>
+          </form>
+        {% endif %}
+      {% endfor %}
       <details class="reject-box">
         <summary>Rechazar</summary>
         <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form>
@@ -83,7 +88,7 @@
     {% else %}
       <div class="read-only-trace">
         <strong>Vista de solo lectura</strong>
-        <p>Decision: {{ gestion.get_decision_display }}. Intentos: {{ gestion.intentos_contacto }}. Ultima accion: {{ gestion.get_ultima_accion_contacto_display|default:"Sin contacto" }}.</p>
+        <p>La traza de decision, contacto y cierre se muestra en el detalle.</p>
       </div>
     {% endif %}
   </footer>

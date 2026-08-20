@@ -22,11 +22,38 @@
     if (row) row.remove();
   }
 
-  function focusDialogControl() {
-    const focusTarget = dialog.querySelector(
-      ".errorlist + input, .errorlist + select, button[type='submit'], [data-dialog-close]"
-    );
+  function focusDialogContent() {
+    const focusTarget = dialog.querySelector("[data-dialog-focus]");
     if (focusTarget) focusTarget.focus();
+  }
+
+  function setFormButtonsDisabled(form, disabled) {
+    form.querySelectorAll("button").forEach((button) => {
+      button.disabled = disabled;
+    });
+  }
+
+  function mostrarErrorDeEnvio() {
+    let status = dialog.querySelector("[data-dialog-status]");
+    if (!status) {
+      status = document.createElement("p");
+      status.className = "danger-text";
+      status.setAttribute("role", "alert");
+      status.setAttribute("data-dialog-status", "");
+      status.tabIndex = -1;
+      dialog.querySelector(".modal-header")?.after(status);
+    }
+    status.textContent = "No se pudo guardar. Intente nuevamente.";
+    status.focus();
+  }
+
+  function decrementarContadorSelector() {
+    const seccion = new URLSearchParams(window.location.search).get("seccion") || "pendientes";
+    if (seccion !== "pendientes") return;
+    const counter = document.querySelector(`[data-selector-counter="${seccion}"]`);
+    if (!counter) return;
+    const actual = Number.parseInt(counter.textContent, 10);
+    if (Number.isFinite(actual)) counter.textContent = String(Math.max(0, actual - 1));
   }
 
   async function loadFragment(url) {
@@ -35,17 +62,13 @@
     dialog.innerHTML = await response.text();
     bindDialog();
     if (!dialog.open) dialog.showModal();
-    focusDialogControl();
+    focusDialogContent();
   }
 
   async function submitFragmentForm(form, submitter) {
-    const buttons = Array.from(form.querySelectorAll("button"));
-    buttons.forEach((button) => { button.disabled = true; });
+    setFormButtonsDisabled(form, true);
     const data = new FormData(form);
     if (submitter && submitter.name) data.set(submitter.name, submitter.value);
-    if (submitter && submitter.dataset.extraName) {
-      data.set(submitter.dataset.extraName, submitter.dataset.extraValue);
-    }
     const action = submitter && submitter.formAction ? submitter.formAction : form.action;
     const response = await fetch(action, {
       method: "POST",
@@ -53,7 +76,6 @@
       headers: { "X-Requested-With": "fetch" },
     });
     if (!response.ok) {
-      buttons.forEach((button) => { button.disabled = false; });
       throw new Error("No se pudo guardar.");
     }
     const previousId = dialog
@@ -61,15 +83,18 @@
       ?.getAttribute("data-current-row-id");
     dialog.innerHTML = await response.text();
     const confirmation = dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]');
-    if (confirmation && previousId) removeResolvedRow(previousId);
+    if (confirmation?.dataset.caseResolved === "true" && previousId) removeResolvedRow(previousId);
     const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
     const muestraSiguienteCaso =
       fragmentRoot?.dataset.fragmentKind === "selector-detail" &&
       fragmentRoot.dataset.currentRowId !== previousId;
     const muestraColaVacia = fragmentRoot?.dataset.fragmentKind === "selector-empty";
-    if (muestraSiguienteCaso || muestraColaVacia) removeResolvedRow(previousId);
+    if (muestraSiguienteCaso || muestraColaVacia) {
+      removeResolvedRow(previousId);
+      decrementarContadorSelector();
+    }
     bindDialog();
-    focusDialogControl();
+    focusDialogContent();
   }
 
   function bindDialog() {
@@ -79,7 +104,10 @@
     dialog.querySelectorAll("[data-fragment-form]").forEach((form) => {
       form.addEventListener("submit", (event) => {
         event.preventDefault();
-        submitFragmentForm(form, event.submitter).catch(() => form.submit());
+        submitFragmentForm(form, event.submitter).catch(() => {
+          setFormButtonsDisabled(form, false);
+          mostrarErrorDeEnvio();
+        });
       });
     });
   }

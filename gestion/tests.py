@@ -1065,6 +1065,33 @@ class SelectorViewsTests(TestCase):
         self.assertContains(response, 'data-current-row-id="%s"' % gestion.pk, html=False)
         self.assertContains(response, "Debe indicar prioridad clinica")
 
+    def test_detalle_selector_completo_acepta_prioridad_sin_javascript(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(
+            response,
+            'name="prioridad_clinica" value="ALTA"',
+            html=False,
+        )
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {
+                "decision": Gestion.Decision.ACEPTADA,
+                "prioridad_clinica": Solicitud.Prioridad.ALTA,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertRedirects(response, "/selector/", fetch_redirect_response=False)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
+        self.assertEqual(gestion.prioridad_clinica, Solicitud.Prioridad.ALTA)
+
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
 class ComunicadorViewsTests(TestCase):
@@ -1412,6 +1439,8 @@ class ComunicadorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-fragment-kind="comunicador-confirmation"', html=False)
         self.assertContains(response, "Contacto registrado")
+        self.assertContains(response, 'data-case-resolved="false"', html=False)
+        self.assertContains(response, "El caso permanece en la cola")
 
 
 class CerrarRechazadosCommandTests(TestCase):
@@ -1597,7 +1626,7 @@ class GestionListasUiTests(TestCase):
         )
         self.assertContains(response, f'id="prioridad-{gestion.pk}"', html=False)
         self.assertContains(response, 'role="tooltip"', html=False)
-        self.assertContains(response, 'palabra clave "dolor pecho"')
+        self.assertContains(response, "palabra clave &quot;dolor pecho&quot;", html=False)
         self.assertContains(response, "edad 68 anos")
         css = Path(__file__).resolve().parent.parent / "static" / "css" / "gestion.css"
         self.assertIn(".priority-badge:focus + .prioridad-detalle", css.read_text())
@@ -1700,6 +1729,55 @@ class GestionAccesibilidadMarkupTests(TestCase):
         self.assertContains(response, "Aceptar Baja")
         self.assertContains(response, "Confirmar rechazo")
         self.assertContains(response, "No aplica")
+
+    def test_detalle_completo_no_muestra_cierre_de_modal_sin_efecto(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertNotContains(response, "data-dialog-close", html=False)
+
+    def test_modal_oculta_fecha_de_agenda_hasta_que_se_expande_la_accion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, '<details class="agenda-box">', html=False)
+
+    def test_js_de_fragmentos_no_reenvia_formularios_y_actualiza_contadores(self):
+        javascript = (
+            Path(__file__).resolve().parent.parent / "static" / "js" / "gestion.js"
+        ).read_text()
+        self.assertNotIn("form.submit()", javascript)
+        self.assertIn("data-selector-counter", javascript)
+        self.assertIn("data-dialog-focus", javascript)
+        self.assertIn("No se pudo guardar. Intente nuevamente.", javascript)
+
+    def test_vista_solo_lectura_muestra_traza_de_auditoria_completa(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="auditoria")
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+
+        selector = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        comunicador = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        for response in (selector, comunicador):
+            self.assertContains(response, "Decidido por")
+            self.assertContains(response, "Fecha de decision")
+            self.assertContains(response, "Intentos de contacto")
+            self.assertContains(response, "Ultima accion de contacto")
+            self.assertContains(response, "Motivo de cierre")
 
     def test_formulario_de_contacto_fragmentado_conserva_accion_de_fragmento(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion

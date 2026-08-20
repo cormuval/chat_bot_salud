@@ -11,10 +11,10 @@
 </section>
 
 <nav class="gestion-nav" aria-label="Secciones del selector">
-  <a class="tab-link" href="{% url 'gestion:selector_lista' %}">Pendientes <strong>{{ conteos_selector.pendientes }}</strong></a>
-  <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles <strong>{{ conteos_selector.decididas }}</strong></a>
+  <a class="tab-link" href="{% url 'gestion:selector_lista' %}">Pendientes <strong data-selector-counter="pendientes">{{ conteos_selector.pendientes }}</strong></a>
+  <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles <strong data-selector-counter="decididas">{{ conteos_selector.decididas }}</strong></a>
   {% if mostrar_no_aplica %}
-    <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica <strong>{{ conteos_selector.no_aplica }}</strong></a>
+    <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica <strong data-selector-counter="no_aplica">{{ conteos_selector.no_aplica }}</strong></a>
   {% endif %}
 </nav>
 
@@ -41,7 +41,7 @@
           </span>
           <span id="prioridad-{{ gestion.pk }}" class="prioridad-detalle" role="tooltip">
             {% for factor in gestion.solicitud|desglose_prioridad %}
-              <span>{{ factor.descripcion|safe }} +{{ factor.puntaje }}</span>
+              <span>{{ factor.descripcion }} +{{ factor.puntaje }}</span>
             {% empty %}
               <span>sin factores de prioridad +0</span>
             {% endfor %}
