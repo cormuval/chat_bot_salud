@@ -1,0 +1,51 @@
+{% load gestion_ui %}
+<table class="data-table" data-gestion-list>
+  <thead>
+    <tr>
+      <th>Paciente</th>
+      <th>Telefono</th>
+      <th>Prioridad / motivo</th>
+      <th>Estado</th>
+      <th>Ultimo intento</th>
+      <th>Plazo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for gestion in gestiones %}
+      <tr class="row-link {% if gestion.intentos_contacto == 0 %}row-pending{% endif %}" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:comunicador_detalle' gestion.pk %}?fragmento=1">
+        <td data-label="Paciente">{{ gestion.solicitud.nombre }}</td>
+        <td data-label="Telefono">
+          <a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a>
+          {% if gestion.decision == "RECHAZADA" and not gestion|telefono_whatsapp_valido %}
+            <div class="danger-text">Telefono invalido para WhatsApp</div>
+          {% endif %}
+        </td>
+        <td data-label="Prioridad / motivo">
+          {% if gestion.decision == "ACEPTADA" %}
+            <span class="priority-badge {{ gestion.prioridad_clinica|prioridad_css }}">{{ gestion.get_prioridad_clinica_display }}</span>
+          {% else %}
+            {{ gestion.motivo_rechazo }}
+          {% endif %}
+        </td>
+        <td data-label="Estado">
+          {% if gestion.intentos_contacto == 0 %}
+            <strong>Sin intentos</strong>
+          {% else %}
+            {{ gestion.intentos_contacto }} intento{{ gestion.intentos_contacto|pluralize }} - {{ gestion.get_ultima_accion_contacto_display }}
+          {% endif %}
+        </td>
+        <td data-label="Ultimo intento">{{ gestion.fecha_ultimo_intento|tiempo_relativo }}</td>
+        <td data-label="Plazo">{% if gestion.decision == "RECHAZADA" %}{{ gestion|horas_restantes_rechazo }}{% else %}-{% endif %}</td>
+        <td data-label="Abrir">
+          <a href="{% url 'gestion:comunicador_detalle' gestion.pk %}">Abrir</a>
+          {% if gestion.decision == "RECHAZADA" and not gestion|telefono_whatsapp_valido %}
+            <button type="button" disabled>WhatsApp no disponible</button>
+          {% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7"><div class="empty-state">No hay casos en este grupo.</div></td></tr>
+    {% endfor %}
+  </tbody>
+</table>

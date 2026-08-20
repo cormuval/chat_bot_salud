@@ -1,35 +1,60 @@
 {% extends "gestion/base.html" %}
+{% load gestion_ui %}
 {% block title %}Cola del selector{% endblock %}
+{% block body_attrs %}data-gestion-page="selector"{% endblock %}
 {% block content %}
-<h1>Solicitudes del selector</h1>
-<nav aria-label="Secciones del selector">
-  <a href="{% url 'gestion:selector_lista' %}">Pendientes</a>
-  <a href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles</a>
+<section class="page-title">
+  <div>
+    <h2>Solicitudes del selector</h2>
+    <p>Abra un caso para revisar motivo, condiciones y decision.</p>
+  </div>
+</section>
+
+<nav class="gestion-nav" aria-label="Secciones del selector">
+  <a class="tab-link" href="{% url 'gestion:selector_lista' %}">Pendientes <strong>{{ conteos_selector.pendientes }}</strong></a>
+  <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles <strong>{{ conteos_selector.decididas }}</strong></a>
   {% if mostrar_no_aplica %}
-    <a href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica</a>
+    <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica <strong>{{ conteos_selector.no_aplica }}</strong></a>
   {% endif %}
 </nav>
-{% if seccion == "decididas" %}
-  <h2>Decididas corregibles</h2>
-{% elif seccion == "no_aplica" %}
-  <h2>No aplica</h2>
-{% else %}
-  <h2>Pendientes</h2>
-{% endif %}
-<table>
-  <thead><tr><th>Paciente</th><th>Centro</th><th>Prioridad administrativa</th><th>Decision</th><th>Fecha</th><th></th></tr></thead>
+
+<table class="data-table" data-gestion-list>
+  <thead>
+    <tr>
+      <th>Paciente</th>
+      {% if mostrar_columna_centro %}<th>Centro</th>{% endif %}
+      <th>Prioridad administrativa</th>
+      <th>Motivo</th>
+      <th>Fecha</th>
+      {% if seccion == "decididas" %}<th>Correccion</th>{% endif %}
+      <th></th>
+    </tr>
+  </thead>
   <tbody>
     {% for gestion in gestiones %}
-      <tr>
-        <td>{{ gestion.solicitud.nombre }}</td>
-        <td>{{ gestion.solicitud.centro_salud }}</td>
-        <td>{{ gestion.solicitud.get_priorizacion_solicitud_display }}</td>
-        <td>{{ gestion.get_decision_display }}</td>
-        <td>{{ gestion.solicitud.date_solicitud }}</td>
-        <td><a href="{% url 'gestion:selector_detalle' gestion.pk %}">Abrir</a></td>
+      <tr class="row-link" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1">
+        <td data-label="Paciente">{{ gestion.solicitud.nombre }}</td>
+        {% if mostrar_columna_centro %}<td data-label="Centro">{{ gestion.solicitud.centro_salud }}</td>{% endif %}
+        <td data-label="Prioridad administrativa">
+          <span class="priority-badge {{ gestion.solicitud.priorizacion_solicitud|prioridad_css }}">
+            {{ gestion.solicitud.get_priorizacion_solicitud_display }}
+          </span>
+        </td>
+        <td data-label="Motivo"><span class="truncate">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
+        <td data-label="Fecha"><time title="{{ gestion.solicitud.date_solicitud }}">{{ gestion.solicitud.date_solicitud|tiempo_relativo }}</time></td>
+        {% if seccion == "decididas" %}
+          <td data-label="Correccion">
+            {% if gestion.decision == "RECHAZADA" %}
+              <span class="warning-text">{{ gestion|horas_restantes_rechazo }}</span>
+            {% else %}
+              Sin intentos registrados
+            {% endif %}
+          </td>
+        {% endif %}
+        <td data-label="Abrir"><a href="{% url 'gestion:selector_detalle' gestion.pk %}">Abrir</a></td>
       </tr>
     {% empty %}
-      <tr><td colspan="6">No hay solicitudes en esta seccion.</td></tr>
+      <tr><td colspan="7"><div class="empty-state">No hay solicitudes en esta seccion.</div></td></tr>
     {% endfor %}
   </tbody>
 </table>

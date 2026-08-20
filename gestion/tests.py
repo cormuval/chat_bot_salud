@@ -1375,3 +1375,101 @@ class GestionBaseLayoutTests(TestCase):
         self.assertContains(response, "Selector")
         self.assertContains(response, str(self.centro))
         self.assertContains(response, "Cerrar sesion")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GestionListasUiTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("selector-lista@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_selector_lista_oculta_decision_y_centro_para_selector_de_un_centro(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            motivo="Dolor pecho",
+            detalle_motivo="Dolor pecho desde la noche anterior",
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+        ).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dolor pecho desde la noche anterior")
+        self.assertContains(response, "Urgente")
+        self.assertContains(response, f'data-detail-url="/selector/{gestion.pk}/?fragmento=1"', html=False)
+        self.assertNotContains(response, "<th>Decision</th>", html=False)
+        self.assertNotContains(response, "<th>Centro</th>", html=False)
+
+    def test_selector_lista_muestra_centro_para_admin(self):
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+        crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "<th>Centro</th>", html=False)
+
+    def test_selector_tabs_muestran_conteos(self):
+        pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
+        decidida = crear_solicitud_base(centro_salud=self.centro).gestion
+        decidida.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        no_aplica = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica.marcar_no_aplica(self.usuario)
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "Pendientes")
+        self.assertContains(response, ">1<", html=False)
+        self.assertEqual(pendiente.decision, Gestion.Decision.PENDIENTE)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ComunicadorListaUiTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("comunicador-lista@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.COMUNICADOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_comunicador_separa_aceptadas_y_rechazadas(self):
+        aceptada = crear_solicitud_base(centro_salud=self.centro).gestion
+        aceptada.aceptar(self.usuario, Solicitud.Prioridad.URGENTE)
+        rechazada = crear_solicitud_base(centro_salud=self.centro).gestion
+        rechazada.rechazar(self.usuario, self.motivo)
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "Aceptadas - llamar por telefono")
+        self.assertContains(response, "Rechazadas - avisar por WhatsApp")
+        self.assertLess(
+            response.content.decode("utf-8").index("Aceptadas - llamar por telefono"),
+            response.content.decode("utf-8").index("Rechazadas - avisar por WhatsApp"),
+        )
+
+    def test_comunicador_marca_telefono_invalido_y_deshabilita_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="123").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "Telefono invalido para WhatsApp")
+        self.assertContains(response, "WhatsApp no disponible")
+        self.assertContains(response, "disabled")
+
+    def test_comunicador_muestra_tel_y_cuenta_regresiva_de_rechazo(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="+56949106239").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=18)
+        )
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, 'href="tel:+56949106239"', html=False)
+        self.assertContains(response, "quedan 5 h para avisar")

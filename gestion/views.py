@@ -79,6 +79,14 @@ def selector_lista(request):
     if perfil is None or not puede_usar_selector(perfil):
         return redirect("gestion:sin_acceso")
     mostrar_no_aplica = puede_ver_no_aplica(perfil)
+    conteos_selector = {
+        "pendientes": Gestion.objects.cola_selector(perfil).count(),
+        "decididas": Gestion.objects.decididas_corregibles_selector(perfil).count(),
+        "no_aplica": Gestion.objects.no_aplica_selector(perfil).count()
+        if mostrar_no_aplica
+        else 0,
+    }
+    mostrar_columna_centro = perfil.centros_permitidos().count() > 1
     seccion = request.GET.get("seccion", "pendientes")
     if seccion == "decididas":
         gestiones = Gestion.objects.decididas_corregibles_selector(perfil)
@@ -96,6 +104,8 @@ def selector_lista(request):
             "puede_escribir": puede_escribir_selector(perfil),
             "seccion": seccion,
             "mostrar_no_aplica": mostrar_no_aplica,
+            "conteos_selector": conteos_selector,
+            "mostrar_columna_centro": mostrar_columna_centro,
         },
     )
 
@@ -136,13 +146,21 @@ def comunicador_lista(request):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_comunicador(perfil):
         return redirect("gestion:sin_acceso")
-    gestiones = Gestion.objects.tabla_comunicador(perfil)
+    gestiones = list(Gestion.objects.tabla_comunicador(perfil))
+    gestiones_aceptadas = [
+        gestion for gestion in gestiones if gestion.decision == Gestion.Decision.ACEPTADA
+    ]
+    gestiones_rechazadas = [
+        gestion for gestion in gestiones if gestion.decision == Gestion.Decision.RECHAZADA
+    ]
     return render(
         request,
         "gestion/comunicador_lista.html",
         {
             "perfil": perfil,
             "gestiones": gestiones,
+            "gestiones_aceptadas": gestiones_aceptadas,
+            "gestiones_rechazadas": gestiones_rechazadas,
             "puede_escribir": puede_escribir_comunicador(perfil),
         },
     )
