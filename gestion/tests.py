@@ -1,5 +1,6 @@
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -1578,7 +1579,7 @@ class GestionListasUiTests(TestCase):
         self.assertContains(response, "<th>Centro</th>", html=False)
 
     def test_prioridad_en_lista_expone_desglose_en_hover_y_foco(self):
-        crear_solicitud_base(
+        gestion = crear_solicitud_base(
             centro_salud=self.centro,
             motivo="dolor pecho",
             detalle_motivo="adulto mayor",
@@ -1589,8 +1590,21 @@ class GestionListasUiTests(TestCase):
         response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
         self.assertContains(response, "prioridad-detalle")
         self.assertContains(response, 'tabindex="0"', html=False)
+        self.assertContains(
+            response,
+            f'aria-describedby="prioridad-{gestion.pk}"',
+            html=False,
+        )
+        self.assertContains(response, f'id="prioridad-{gestion.pk}"', html=False)
+        self.assertContains(response, 'role="tooltip"', html=False)
         self.assertContains(response, 'palabra clave "dolor pecho"')
         self.assertContains(response, "edad 68 anos")
+        css = Path(__file__).resolve().parent.parent / "static" / "css" / "gestion.css"
+        self.assertIn(".priority-badge:focus + .prioridad-detalle", css.read_text())
+
+    def test_selector_vacio_usa_colspan_de_sus_columnas_visibles(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, '<td colspan="5">', html=False)
 
     def test_selector_tabs_muestran_conteos(self):
         pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1650,3 +1664,52 @@ class ComunicadorListaUiTests(TestCase):
         response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
         self.assertContains(response, 'href="tel:+56949106239"', html=False)
         self.assertContains(response, "quedan 5 h para avisar")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GestionAccesibilidadMarkupTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("ui-a11y@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.FULL,
+            centro=self.centro,
+        )
+        self.client.force_login(self.usuario)
+
+    def test_filas_clickeables_conservan_enlace_real(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, f'href="/selector/{gestion.pk}/"', html=False)
+        self.assertContains(
+            response,
+            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1"',
+            html=False,
+        )
+
+    def test_botones_de_modal_tienen_texto_de_accion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Aceptar Urgente")
+        self.assertContains(response, "Aceptar Alta")
+        self.assertContains(response, "Aceptar Media")
+        self.assertContains(response, "Aceptar Baja")
+        self.assertContains(response, "Confirmar rechazo")
+        self.assertContains(response, "No aplica")
+
+    def test_formulario_de_contacto_fragmentado_conserva_accion_de_fragmento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(
+            response,
+            f'action="/comunicador/{gestion.pk}/?fragmento=1"',
+            html=False,
+        )

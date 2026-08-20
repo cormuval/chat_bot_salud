@@ -39,6 +39,8 @@
   }
 
   async function submitFragmentForm(form, submitter) {
+    const buttons = Array.from(form.querySelectorAll("button"));
+    buttons.forEach((button) => { button.disabled = true; });
     const data = new FormData(form);
     if (submitter && submitter.name) data.set(submitter.name, submitter.value);
     if (submitter && submitter.dataset.extraName) {
@@ -50,7 +52,10 @@
       body: data,
       headers: { "X-Requested-With": "fetch" },
     });
-    if (!response.ok) throw new Error("No se pudo guardar.");
+    if (!response.ok) {
+      buttons.forEach((button) => { button.disabled = false; });
+      throw new Error("No se pudo guardar.");
+    }
     const previousId = dialog
       .querySelector("[data-current-row-id]")
       ?.getAttribute("data-current-row-id");

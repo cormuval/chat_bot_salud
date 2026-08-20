@@ -61,7 +61,7 @@
         <td data-label="Abrir"><a href="{% url 'gestion:selector_detalle' gestion.pk %}">Abrir</a></td>
       </tr>
     {% empty %}
-      <tr><td colspan="7"><div class="empty-state">No hay solicitudes en esta seccion.</div></td></tr>
+      <tr><td colspan="{% if mostrar_columna_centro %}{% if seccion == "decididas" %}7{% else %}6{% endif %}{% else %}{% if seccion == "decididas" %}6{% else %}5{% endif %}{% endif %}"><div class="empty-state">No hay solicitudes en esta seccion.</div></td></tr>
     {% endfor %}
   </tbody>
 </table>
