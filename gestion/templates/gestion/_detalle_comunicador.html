@@ -41,7 +41,7 @@
   <footer class="modal-actions">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
     {% if puede_escribir %}
-      <form method="post" action="{% url 'gestion:comunicador_detalle' gestion.pk %}?fragmento=1" data-fragment-form>
+      <form method="post" action="{% url 'gestion:comunicador_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form>
         {% csrf_token %}
         {{ form.token_contacto }}
         <button type="submit" name="accion" value="AGENDADA">Agendada</button>

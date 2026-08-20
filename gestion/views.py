@@ -239,6 +239,7 @@ def comunicador_detalle(request, pk):
             "form": form,
             "form_whatsapp": form_whatsapp,
             "puede_escribir": puede_escribir,
+            "es_fragmento": es_fragmento,
         },
     )
 

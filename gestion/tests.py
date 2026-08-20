@@ -1341,6 +1341,22 @@ class ComunicadorViewsTests(TestCase):
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 0)
 
+    def test_detalle_comunicador_completo_envia_contacto_sin_fragmento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'action="/comunicador/{gestion.pk}/"',
+            html=False,
+        )
+        self.assertNotContains(response, "?fragmento=1", html=False)
 
     def test_fragmento_comunicador_no_incluye_layout_y_muestra_historial(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
