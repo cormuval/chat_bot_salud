@@ -1,22 +1,5 @@
 {% extends "gestion/base.html" %}
 {% block title %}Contacto {{ gestion.solicitud_id }}{% endblock %}
 {% block content %}
-<h1>{{ gestion.solicitud.nombre }}</h1>
-<p>{{ gestion.solicitud.telefono }} - {{ gestion.solicitud.centro_salud }}</p>
-<p>Decision: {{ gestion.get_decision_display }}</p>
-{% if gestion.motivo_rechazo %}<p>Motivo: {{ gestion.motivo_rechazo }}</p>{% endif %}
-{% if puede_escribir %}
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Registrar contacto</button>
-  </form>
-  <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}">
-    {% csrf_token %}
-    {{ form_whatsapp.token_contacto }}
-    <button type="submit">Abrir WhatsApp</button>
-  </form>
-{% else %}
-  <p>Vista de solo lectura.</p>
-{% endif %}
+  {% include "gestion/_detalle_comunicador.html" %}
 {% endblock %}

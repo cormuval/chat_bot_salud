@@ -55,6 +55,8 @@
       .querySelector("[data-current-row-id]")
       ?.getAttribute("data-current-row-id");
     dialog.innerHTML = await response.text();
+    const confirmation = dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]');
+    if (confirmation && previousId) removeResolvedRow(previousId);
     const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
     const muestraSiguienteCaso =
       fragmentRoot?.dataset.fragmentKind === "selector-detail" &&

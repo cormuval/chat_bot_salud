@@ -1342,6 +1342,61 @@ class ComunicadorViewsTests(TestCase):
         self.assertEqual(gestion.intentos_contacto, 0)
 
 
+    def test_fragmento_comunicador_no_incluye_layout_y_muestra_historial(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="primer-token")
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="comunicador-detail"', html=False)
+        self.assertNotContains(response, "<html", html=False)
+        self.assertContains(response, "Historial de contacto")
+        self.assertContains(response, "1 intento")
+
+    def test_fragmento_comunicador_muestra_vista_previa_whatsapp(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            nombre="Ana Perez",
+        ).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Vista previa de WhatsApp")
+        self.assertContains(response, "Ana Perez")
+
+    def test_fragmento_comunicador_invalido_deshabilita_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="123").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Telefono invalido para WhatsApp")
+        self.assertContains(response, "disabled")
+
+    def test_post_fragmento_comunicador_devuelve_confirmacion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        token = response.context["form"]["token_contacto"].value()
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            {"accion": "NO_CONTESTA", "token_contacto": token},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="comunicador-confirmation"', html=False)
+        self.assertContains(response, "Contacto registrado")
+
+
 class CerrarRechazadosCommandTests(TestCase):
     def setUp(self):
         self.usuario = User.objects.create_user("selector@cmvalparaiso.cl")

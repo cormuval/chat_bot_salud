@@ -200,6 +200,8 @@ def comunicador_detalle(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_comunicador(perfil):
         return redirect("gestion:sin_acceso")
+    es_fragmento = request.GET.get("fragmento") == "1"
+    template = "gestion/_detalle_comunicador.html" if es_fragmento else "gestion/comunicador_detalle.html"
     if request.method == "POST":
         gestion = _gestion_para_post_comunicador_o_404(perfil, pk)
     else:
@@ -214,13 +216,23 @@ def comunicador_detalle(request, pk):
             try:
                 form.guardar(gestion, request.user)
                 _advertir_cierre_automatico(request, gestion)
+                if es_fragmento:
+                    return render(
+                        request,
+                        "gestion/_confirmacion_comunicador.html",
+                        {
+                            "perfil": perfil,
+                            "gestion": gestion,
+                            "mensaje_resultado": "Contacto registrado.",
+                        },
+                    )
                 messages.success(request, "Contacto registrado.")
                 return redirect("gestion:comunicador_lista")
             except ValidationError as exc:
                 form.add_error(None, exc)
     return render(
         request,
-        "gestion/comunicador_detalle.html",
+        template,
         {
             "perfil": perfil,
             "gestion": gestion,
