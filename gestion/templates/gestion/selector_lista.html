@@ -32,7 +32,7 @@
   </thead>
   <tbody>
     {% for gestion in gestiones %}
-      <tr class="row-link" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1">
+      <tr class="row-link" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1&amp;seccion={{ seccion }}">
         <td data-label="Paciente">{{ gestion.solicitud.nombre }}</td>
         {% if mostrar_columna_centro %}<td data-label="Centro">{{ gestion.solicitud.centro_salud }}</td>{% endif %}
         <td data-label="Prioridad administrativa">

@@ -117,6 +117,11 @@ def selector_detalle(request, pk):
         return redirect("gestion:sin_acceso")
     es_fragmento = request.GET.get("fragmento") == "1"
     template = "gestion/_detalle_selector.html" if es_fragmento else "gestion/selector_detalle.html"
+    seccion_origen = request.GET.get("seccion", "pendientes")
+    if seccion_origen not in {"pendientes", "decididas", "no_aplica"}:
+        seccion_origen = "pendientes"
+    if seccion_origen == "no_aplica" and not puede_ver_no_aplica(perfil):
+        seccion_origen = "pendientes"
     gestion = gestion_alcanzable_o_404(perfil, pk)
     puede_escribir = puede_escribir_selector(perfil)
     form = DecisionSelectorForm(request.POST or None)
@@ -132,9 +137,31 @@ def selector_detalle(request, pk):
                     Gestion.Decision.NO_APLICA: "Marcada como no aplica",
                 }.get(gestion.decision, "Decision registrada")
                 if es_fragmento:
-                    siguiente = Gestion.objects.cola_selector(perfil).first()
+                    seccion_destino = {
+                        Gestion.Decision.PENDIENTE: "pendientes",
+                        Gestion.Decision.ACEPTADA: "decididas",
+                        Gestion.Decision.RECHAZADA: "decididas",
+                        Gestion.Decision.NO_APLICA: "no_aplica",
+                    }[gestion.decision]
+                    accion_fila = "keep" if seccion_origen == seccion_destino else "remove"
+                    if accion_fila == "keep":
+                        siguiente = gestion
+                    elif seccion_origen == "decididas":
+                        siguiente = Gestion.objects.decididas_corregibles_selector(perfil).first()
+                    elif seccion_origen == "no_aplica":
+                        siguiente = Gestion.objects.no_aplica_selector(perfil).first()
+                    else:
+                        siguiente = Gestion.objects.cola_selector(perfil).first()
                     if siguiente is None:
-                        return render(request, "gestion/_cola_selector_vacia.html")
+                        return render(
+                            request,
+                            "gestion/_cola_selector_vacia.html",
+                            {
+                                "seccion_origen": seccion_origen,
+                                "seccion_destino": seccion_destino,
+                                "accion_fila": accion_fila,
+                            },
+                        )
                     gestion = gestion_alcanzable_o_404(perfil, siguiente.pk)
                     form = DecisionSelectorForm()
                     foto_credencial_data_url = _foto_credencial_data_url(gestion)
@@ -149,6 +176,9 @@ def selector_detalle(request, pk):
                             "foto_credencial_data_url": foto_credencial_data_url,
                             "mensaje_resultado": mensaje_resultado,
                             "es_fragmento": es_fragmento,
+                            "seccion_origen": seccion_origen,
+                            "seccion_destino": seccion_destino,
+                            "accion_fila": accion_fila,
                         },
                     )
                 messages.success(request, "Decision registrada.")
@@ -166,6 +196,9 @@ def selector_detalle(request, pk):
             "foto_credencial_data_url": _foto_credencial_data_url(gestion),
             "mensaje_resultado": "",
             "es_fragmento": es_fragmento,
+            "seccion_origen": seccion_origen,
+            "seccion_destino": seccion_origen,
+            "accion_fila": "keep",
         },
     )
 

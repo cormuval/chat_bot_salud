@@ -23,7 +23,9 @@
   }
 
   function focusDialogContent() {
-    const focusTarget = dialog.querySelector("[data-dialog-focus]");
+    const focusTarget = dialog.querySelector(
+      "[data-dialog-error-focus], [data-dialog-focus]"
+    );
     if (focusTarget) focusTarget.focus();
   }
 
@@ -47,13 +49,22 @@
     status.focus();
   }
 
-  function decrementarContadorSelector() {
-    const seccion = new URLSearchParams(window.location.search).get("seccion") || "pendientes";
-    if (seccion !== "pendientes") return;
+  function ajustarContadorSelector(seccion, diferencia) {
+    if (!seccion || !diferencia) return;
     const counter = document.querySelector(`[data-selector-counter="${seccion}"]`);
     if (!counter) return;
     const actual = Number.parseInt(counter.textContent, 10);
-    if (Number.isFinite(actual)) counter.textContent = String(Math.max(0, actual - 1));
+    if (Number.isFinite(actual)) {
+      counter.textContent = String(Math.max(0, actual + diferencia));
+    }
+  }
+
+  function actualizarContadoresSelector(fragmentRoot) {
+    const origen = fragmentRoot?.dataset.selectorSourceSection;
+    const destino = fragmentRoot?.dataset.selectorDestinationSection;
+    if (!origen || !destino) return;
+    ajustarContadorSelector(origen, -1);
+    if (destino !== origen) ajustarContadorSelector(destino, 1);
   }
 
   async function loadFragment(url) {
@@ -85,13 +96,9 @@
     const confirmation = dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]');
     if (confirmation?.dataset.caseResolved === "true" && previousId) removeResolvedRow(previousId);
     const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
-    const muestraSiguienteCaso =
-      fragmentRoot?.dataset.fragmentKind === "selector-detail" &&
-      fragmentRoot.dataset.currentRowId !== previousId;
-    const muestraColaVacia = fragmentRoot?.dataset.fragmentKind === "selector-empty";
-    if (muestraSiguienteCaso || muestraColaVacia) {
+    if (fragmentRoot?.dataset.selectorRowAction === "remove") {
       removeResolvedRow(previousId);
-      decrementarContadorSelector();
+      actualizarContadoresSelector(fragmentRoot);
     }
     bindDialog();
     focusDialogContent();

@@ -1043,6 +1043,60 @@ class SelectorViewsTests(TestCase):
         self.assertContains(response, f'data-current-row-id="{segundo.pk}"', html=False)
         self.assertContains(response, "Aceptada como Alta")
 
+    def test_post_fragmento_selector_desde_pendientes_expone_transicion_de_contadores(self):
+        primero = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+        ).gestion
+        crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+        )
+
+        response = self.client.post(
+            f"/selector/{primero.pk}/?fragmento=1&seccion=pendientes",
+            {
+                "decision": Gestion.Decision.ACEPTADA,
+                "prioridad_clinica": Solicitud.Prioridad.ALTA,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
+        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
+        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
+
+    def test_post_fragmento_selector_no_aplica_expone_transicion_de_contadores(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1&seccion=pendientes",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
+        self.assertContains(response, 'data-selector-destination-section="no_aplica"', html=False)
+        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
+
+    def test_post_fragmento_selector_desde_decididas_conserva_caso_corregible(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1&seccion=decididas",
+            {
+                "decision": Gestion.Decision.RECHAZADA,
+                "motivo_rechazo": self.motivo.pk,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, f'data-current-row-id="{gestion.pk}"', html=False)
+        self.assertContains(response, 'data-selector-source-section="decididas"', html=False)
+        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
+        self.assertContains(response, 'data-selector-row-action="keep"', html=False)
+
     def test_post_fragmento_selector_ultimo_devuelve_cola_vacia(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         response = self.client.post(
@@ -1064,6 +1118,19 @@ class SelectorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-current-row-id="%s"' % gestion.pk, html=False)
         self.assertContains(response, "Debe indicar prioridad clinica")
+
+    def test_post_fragmento_selector_rechazo_invalido_muestra_error_y_reabre_detalle(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.RECHAZADA},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Debe indicar motivo de rechazo")
+        self.assertContains(response, '<details class="reject-box" open>', html=False)
+        self.assertContains(response, 'data-dialog-error-focus', html=False)
 
     def test_detalle_selector_completo_acepta_prioridad_sin_javascript(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1442,6 +1509,20 @@ class ComunicadorViewsTests(TestCase):
         self.assertContains(response, 'data-case-resolved="false"', html=False)
         self.assertContains(response, "El caso permanece en la cola")
 
+    def test_post_fragmento_comunicador_agendada_invalida_muestra_error_y_reabre_agenda(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            {"accion": "AGENDADA"},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Debe indicar fecha y hora acordadas")
+        self.assertContains(response, '<details class="agenda-box" open>', html=False)
+        self.assertContains(response, 'data-dialog-error-focus', html=False)
+
 
 class CerrarRechazadosCommandTests(TestCase):
     def setUp(self):
@@ -1596,7 +1677,11 @@ class GestionListasUiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Dolor pecho desde la noche anterior")
         self.assertContains(response, "Urgente")
-        self.assertContains(response, f'data-detail-url="/selector/{gestion.pk}/?fragmento=1"', html=False)
+        self.assertContains(
+            response,
+            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            html=False,
+        )
         self.assertNotContains(response, "<th>Decision</th>", html=False)
         self.assertNotContains(response, "<th>Centro</th>", html=False)
 
@@ -1713,7 +1798,7 @@ class GestionAccesibilidadMarkupTests(TestCase):
         self.assertContains(response, f'href="/selector/{gestion.pk}/"', html=False)
         self.assertContains(
             response,
-            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1"',
+            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
             html=False,
         )
 
@@ -1754,7 +1839,20 @@ class GestionAccesibilidadMarkupTests(TestCase):
         self.assertNotIn("form.submit()", javascript)
         self.assertIn("data-selector-counter", javascript)
         self.assertIn("data-dialog-focus", javascript)
+        self.assertIn("data-dialog-error-focus", javascript)
         self.assertIn("No se pudo guardar. Intente nuevamente.", javascript)
+
+    def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
+        vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"
+        confirmacion = (
+            Path(__file__).resolve().parent
+            / "templates"
+            / "gestion"
+            / "_confirmacion_comunicador.html"
+        )
+
+        self.assertIn("data-dialog-focus", vacia.read_text())
+        self.assertIn("data-dialog-focus", confirmacion.read_text())
 
     def test_vista_solo_lectura_muestra_traza_de_auditoria_completa(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion

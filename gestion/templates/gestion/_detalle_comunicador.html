@@ -46,9 +46,10 @@
       <form method="post" action="{% url 'gestion:comunicador_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form>
         {% csrf_token %}
         {{ form.token_contacto }}
-        <details class="agenda-box">
+        <details class="agenda-box"{% if form.fecha_hora_citacion.errors %} open{% endif %}>
           <summary>Agendar cita</summary>
           {{ form.fecha_hora_citacion }}
+          {% if form.fecha_hora_citacion.errors %}<div data-dialog-error-focus tabindex="-1">{{ form.fecha_hora_citacion.errors }}</div>{% endif %}
           <button type="submit" name="accion" value="AGENDADA">Agendada</button>
         </details>
         <button type="submit" name="accion" value="NO_ACEPTA">El paciente no acepta</button>
