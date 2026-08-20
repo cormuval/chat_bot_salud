@@ -148,6 +148,7 @@ def selector_detalle(request, pk):
                             "puede_escribir": puede_escribir,
                             "foto_credencial_data_url": foto_credencial_data_url,
                             "mensaje_resultado": mensaje_resultado,
+                            "es_fragmento": es_fragmento,
                         },
                     )
                 messages.success(request, "Decision registrada.")
@@ -164,6 +165,7 @@ def selector_detalle(request, pk):
             "puede_escribir": puede_escribir,
             "foto_credencial_data_url": _foto_credencial_data_url(gestion),
             "mensaje_resultado": "",
+            "es_fragmento": es_fragmento,
         },
     )
 

@@ -57,7 +57,7 @@
   <footer class="modal-actions">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
     {% if puede_escribir %}
-      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1" data-fragment-form aria-label="Guardar decision">
+      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form aria-label="Guardar decision">
         {% csrf_token %}
         {% for prioridad, etiqueta in form.fields.prioridad_clinica.choices %}
           {% if prioridad %}
@@ -67,7 +67,7 @@
       </form>
       <details class="reject-box">
         <summary>Rechazar</summary>
-        <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1" data-fragment-form>
+        <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form>
           {% csrf_token %}
           <input type="hidden" name="decision" value="RECHAZADA">
           {{ form.motivo_rechazo }}
@@ -75,7 +75,7 @@
           {{ form.motivo_rechazo.errors }}
         </form>
       </details>
-      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1" data-fragment-form>
+      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form>
         {% csrf_token %}
         <button type="submit" name="decision" value="NO_APLICA">No aplica</button>
       </form>

@@ -16,11 +16,17 @@
     if (lastTrigger) lastTrigger.focus();
   }
 
-  function removeResolvedRow(fragmentRoot) {
-    const currentId = fragmentRoot.getAttribute("data-current-row-id");
+  function removeResolvedRow(currentId) {
     if (!currentId) return;
     const row = document.querySelector(`[data-row-id="${currentId}"]`);
-    if (row && fragmentRoot.querySelector(".status-badge")) row.remove();
+    if (row) row.remove();
+  }
+
+  function focusDialogControl() {
+    const focusTarget = dialog.querySelector(
+      ".errorlist + input, .errorlist + select, button[type='submit'], [data-dialog-close]"
+    );
+    if (focusTarget) focusTarget.focus();
   }
 
   async function loadFragment(url) {
@@ -29,8 +35,7 @@
     dialog.innerHTML = await response.text();
     bindDialog();
     if (!dialog.open) dialog.showModal();
-    const focusTarget = dialog.querySelector("button, a, input, select, textarea");
-    if (focusTarget) focusTarget.focus();
+    focusDialogControl();
   }
 
   async function submitFragmentForm(form, submitter) {
@@ -46,10 +51,18 @@
       headers: { "X-Requested-With": "fetch" },
     });
     if (!response.ok) throw new Error("No se pudo guardar.");
-    const previous = dialog.querySelector("[data-current-row-id]");
+    const previousId = dialog
+      .querySelector("[data-current-row-id]")
+      ?.getAttribute("data-current-row-id");
     dialog.innerHTML = await response.text();
-    if (previous) removeResolvedRow(previous);
+    const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
+    const muestraSiguienteCaso =
+      fragmentRoot?.dataset.fragmentKind === "selector-detail" &&
+      fragmentRoot.dataset.currentRowId !== previousId;
+    const muestraColaVacia = fragmentRoot?.dataset.fragmentKind === "selector-empty";
+    if (muestraSiguienteCaso || muestraColaVacia) removeResolvedRow(previousId);
     bindDialog();
+    focusDialogControl();
   }
 
   function bindDialog() {

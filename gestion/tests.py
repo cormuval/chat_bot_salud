@@ -896,6 +896,32 @@ class SelectorViewsTests(TestCase):
         self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
         self.assertEqual(gestion.prioridad_clinica, Solicitud.Prioridad.ALTA)
 
+    def test_post_sin_fragmento_redirige_a_lista_y_no_devuelve_parcial(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, "/selector/")
+        self.assertNotContains(
+            response, 'data-fragment-kind="selector-detail"', status_code=302
+        )
+
+    def test_detalle_completo_usa_acciones_sin_fragmento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/", HTTP_HOST="gestion.localhost"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "?fragmento=1")
+        self.assertContains(response, f'action="/selector/{gestion.pk}/"', html=False)
+
     def test_rechazar_registra_motivo(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         response = self.client.post(
