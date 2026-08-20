@@ -9,6 +9,7 @@ from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
 from django.http import Http404
 from django.test import TestCase, TransactionTestCase, override_settings
+from django.template import Context, Template
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
@@ -1291,3 +1292,86 @@ class CerrarRechazadosCommandTests(TestCase):
         call_command("cerrar_rechazados")
         gestion.refresh_from_db()
         self.assertIsNone(gestion.cerrada_en)
+
+
+class GestionUiHelpersTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user(
+            "selector-ui@cmvalparaiso.cl", email="selector-ui@cmvalparaiso.cl"
+        )
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos para resolver su solicitud.",
+        )
+
+    def _render(self, source, context):
+        template = Template("{% load gestion_ui %}" + source)
+        return template.render(Context(context)).strip()
+
+    def test_prioridad_css_entrega_clase_estable(self):
+        html = self._render("{{ valor|prioridad_css }}", {"valor": Solicitud.Prioridad.URGENTE})
+        self.assertEqual(html, "prioridad--urgente")
+
+    def test_tiempo_relativo_entrega_horas_y_minutos(self):
+        hace_dos_horas = timezone.now() - timedelta(hours=2, minutes=10)
+        html = self._render("{{ fecha|tiempo_relativo }}", {"fecha": hace_dos_horas})
+        self.assertEqual(html, "hace 2 h")
+
+    def test_horas_restantes_rechazo_muestra_plazo(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=18, minutes=10)
+        )
+        gestion.refresh_from_db()
+        html = self._render("{{ gestion|horas_restantes_rechazo }}", {"gestion": gestion})
+        self.assertEqual(html, "quedan 5 h para avisar")
+
+    def test_telefono_whatsapp_valido_usa_url_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="123").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        html = self._render(
+            "{% if gestion|telefono_whatsapp_valido %}si{% else %}no{% endif %}",
+            {"gestion": gestion},
+        )
+        self.assertEqual(html, "no")
+
+    def test_mensaje_whatsapp_previo_reemplaza_nombre(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            nombre="Ana Perez",
+        ).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        html = self._render("{{ gestion|mensaje_whatsapp_previo }}", {"gestion": gestion})
+        self.assertIn("Ana Perez", html)
+        self.assertNotIn("{nombre}", html)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GestionBaseLayoutTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user(
+            "selector-base@cmvalparaiso.cl", email="selector-base@cmvalparaiso.cl"
+        )
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.client.force_login(self.usuario)
+
+    def test_base_carga_css_js_y_datos_de_sesion(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, 'href="/static/css/gestion.css"', html=False)
+        self.assertContains(response, 'src="/static/js/gestion.js"', html=False)
+        self.assertContains(response, "selector-base@cmvalparaiso.cl")
+        self.assertContains(response, "Selector")
+        self.assertContains(response, str(self.centro))
+        self.assertContains(response, "Cerrar sesion")

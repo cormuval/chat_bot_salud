@@ -1,16 +1,40 @@
+{% load static %}
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Modulo de seleccion{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/gestion.css' %}">
+  {% block extra_head %}{% endblock %}
 </head>
-<body>
-  <nav>
-    <a href="{% url 'gestion:selector_lista' %}">Selector</a>
-    <a href="{% url 'gestion:comunicador_lista' %}">Comunicador</a>
-  </nav>
-  {% for message in messages %}<p>{{ message }}</p>{% endfor %}
-  {% block content %}{% endblock %}
+<body {% block body_attrs %}{% endblock %}>
+  <div class="gestion-shell">
+    <header class="gestion-header">
+      <div class="gestion-brand">
+        <h1>Modulo de seleccion</h1>
+        <p>Solicitudes de morbilidad CESFAM</p>
+      </div>
+      {% if perfil %}
+        <div class="session-box" aria-label="Sesion actual">
+          <span>{{ request.user.email|default:request.user.username }}</span>
+          <span class="session-pill">{{ perfil.get_rol_display }}</span>
+          <span class="muted">{{ perfil.centro }}</span>
+          <a href="{% url 'oidc_logout' %}">Cerrar sesion</a>
+        </div>
+      {% endif %}
+    </header>
+    <nav class="gestion-nav" aria-label="Navegacion principal">
+      <a href="{% url 'gestion:selector_lista' %}">Selector</a>
+      <a href="{% url 'gestion:comunicador_lista' %}">Comunicador</a>
+    </nav>
+    <main class="gestion-main">
+      {% for message in messages %}
+        <p class="status-badge">{{ message }}</p>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="{% static 'js/gestion.js' %}" defer></script>
 </body>
 </html>
