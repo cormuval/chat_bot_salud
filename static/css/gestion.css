@@ -107,6 +107,23 @@ button { cursor: pointer; }
 .prioridad--media { color: var(--prio-media); background: #f0f9ff; }
 .prioridad--baja { color: var(--prio-baja); background: #f0fdf4; }
 
+.prioridad-detalle {
+  position: absolute;
+  z-index: 20;
+  min-width: 220px;
+  max-width: 320px;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  display: none;
+}
+.prioridad-detalle span { display: block; margin: 2px 0; }
+.priority-badge:hover + .prioridad-detalle,
+.priority-badge:focus + .prioridad-detalle { display: block; }
+
 .muted { color: var(--muted); }
 .warning-text { color: var(--warn); font-weight: 700; }
 .danger-text { color: var(--danger); font-weight: 700; }

@@ -1,4 +1,4 @@
-URGENT_KEYWORDS = {
+URGENT_KEYWORDS = [
     "dolor pecho",
     "dificultad respiratoria",
     "falta de aire",
@@ -8,16 +8,16 @@ URGENT_KEYWORDS = {
     "embarazo",
     "gestante",
     "suicida",
-}
+]
 
-MODERATE_KEYWORDS = {
+MODERATE_KEYWORDS = [
     "fiebre",
     "dolor intenso",
     "vomitos",
     "diarrea",
     "infeccion",
     "herida",
-}
+]
 
 
 def _contains_any(text, keywords):
@@ -25,25 +25,67 @@ def _contains_any(text, keywords):
     return any(keyword in normalized for keyword in keywords)
 
 
-def calcular_prioridad(datos):
+def _first_keyword(text, keywords):
+    normalized = (text or "").lower()
+    for keyword in keywords:
+        if keyword in normalized:
+            return keyword
+    return ""
+
+
+def desglosar_prioridad(datos):
     edad = int(datos.get("edad") or 0)
-    puntaje = 0
     clinical_text = f"{datos.get('motivo', '')} {datos.get('detalle_motivo', '')}"
+    factores = []
 
-    if _contains_any(clinical_text, URGENT_KEYWORDS):
-        puntaje += 4
+    palabra_urgente = _first_keyword(clinical_text, URGENT_KEYWORDS)
+    if palabra_urgente:
+        factores.append(
+            {
+                "codigo": "palabra_urgente",
+                "descripcion": f'palabra clave "{palabra_urgente}"',
+                "puntaje": 4,
+            }
+        )
 
-    if _contains_any(clinical_text, MODERATE_KEYWORDS):
-        puntaje += 1
+    palabra_moderada = _first_keyword(clinical_text, MODERATE_KEYWORDS)
+    if palabra_moderada:
+        factores.append(
+            {
+                "codigo": "palabra_moderada",
+                "descripcion": f'palabra clave "{palabra_moderada}"',
+                "puntaje": 1,
+            }
+        )
 
     if edad <= 5 or edad >= 65:
-        puntaje += 2
+        factores.append(
+            {"codigo": "edad", "descripcion": f"edad {edad} anos", "puntaje": 2}
+        )
 
     if bool(datos.get("credendencial_cuidador_discapacidad")):
-        puntaje += 2
+        factores.append(
+            {
+                "codigo": "credencial",
+                "descripcion": "credencial de cuidador",
+                "puntaje": 2,
+            }
+        )
 
     if bool(datos.get("Neurodivergente_prais_gestante")):
-        puntaje += 2
+        factores.append(
+            {
+                "codigo": "condicion",
+                "descripcion": "condicion declarada",
+                "puntaje": 2,
+            }
+        )
+
+    return factores
+
+
+def calcular_prioridad(datos):
+    puntaje = sum(factor["puntaje"] for factor in desglosar_prioridad(datos))
 
     if puntaje >= 6:
         clasificacion = "URGENTE"

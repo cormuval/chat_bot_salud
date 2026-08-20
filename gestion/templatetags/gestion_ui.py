@@ -4,6 +4,7 @@ from django import template
 from django.utils import timezone
 
 from gestion.models import Gestion
+from solicitudes.priorizacion import desglosar_prioridad
 
 
 register = template.Library()
@@ -62,3 +63,16 @@ def mensaje_whatsapp_previo(gestion):
             "solicitud de morbilidad."
         )
     return mensaje.replace("{nombre}", gestion.solicitud.nombre)
+
+
+@register.filter
+def desglose_prioridad(solicitud):
+    return desglosar_prioridad(
+        {
+            "motivo": solicitud.motivo,
+            "detalle_motivo": solicitud.detalle_motivo,
+            "edad": solicitud.edad,
+            "credendencial_cuidador_discapacidad": solicitud.credendencial_cuidador_discapacidad,
+            "Neurodivergente_prais_gestante": solicitud.Neurodivergente_prais_gestante,
+        }
+    )

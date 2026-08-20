@@ -1415,6 +1415,21 @@ class GestionListasUiTests(TestCase):
         response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
         self.assertContains(response, "<th>Centro</th>", html=False)
 
+    def test_prioridad_en_lista_expone_desglose_en_hover_y_foco(self):
+        crear_solicitud_base(
+            centro_salud=self.centro,
+            motivo="dolor pecho",
+            detalle_motivo="adulto mayor",
+            edad=68,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+            puntaje_prioridad=6,
+        ).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "prioridad-detalle")
+        self.assertContains(response, 'tabindex="0"', html=False)
+        self.assertContains(response, 'palabra clave "dolor pecho"')
+        self.assertContains(response, "edad 68 anos")
+
     def test_selector_tabs_muestran_conteos(self):
         pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
         decidida = crear_solicitud_base(centro_salud=self.centro).gestion

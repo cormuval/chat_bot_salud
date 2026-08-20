@@ -36,8 +36,15 @@
         <td data-label="Paciente">{{ gestion.solicitud.nombre }}</td>
         {% if mostrar_columna_centro %}<td data-label="Centro">{{ gestion.solicitud.centro_salud }}</td>{% endif %}
         <td data-label="Prioridad administrativa">
-          <span class="priority-badge {{ gestion.solicitud.priorizacion_solicitud|prioridad_css }}">
-            {{ gestion.solicitud.get_priorizacion_solicitud_display }}
+          <span class="priority-badge {{ gestion.solicitud.priorizacion_solicitud|prioridad_css }}" tabindex="0" aria-describedby="prioridad-{{ gestion.pk }}">
+            {{ gestion.solicitud.get_priorizacion_solicitud_display }} ({{ gestion.solicitud.puntaje_prioridad }} pts)
+          </span>
+          <span id="prioridad-{{ gestion.pk }}" class="prioridad-detalle" role="tooltip">
+            {% for factor in gestion.solicitud|desglose_prioridad %}
+              <span>{{ factor.descripcion|safe }} +{{ factor.puntaje }}</span>
+            {% empty %}
+              <span>sin factores de prioridad +0</span>
+            {% endfor %}
           </span>
         </td>
         <td data-label="Motivo"><span class="truncate">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
