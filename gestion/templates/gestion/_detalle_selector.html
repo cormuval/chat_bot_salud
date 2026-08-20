@@ -1,0 +1,90 @@
+{% load gestion_ui %}
+<article class="modal-panel" data-fragment-kind="selector-detail" data-current-row-id="{{ gestion.pk }}">
+  {% if mensaje_resultado %}<p class="status-badge">{{ mensaje_resultado }}</p>{% endif %}
+  <header class="modal-header">
+    <div>
+      <h2>{{ gestion.solicitud.nombre }}</h2>
+      <p>{{ gestion.solicitud.rut }} - {{ gestion.solicitud.telefono }} - {{ gestion.solicitud.centro_salud }}</p>
+    </div>
+    <button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>
+  </header>
+  <div class="modal-body">
+    <section class="case-summary">
+      <h3>Motivo de consulta</h3>
+      <p><strong>{{ gestion.solicitud.motivo }}</strong></p>
+      <p>{{ gestion.solicitud.detalle_motivo }}</p>
+    </section>
+    <dl class="detail-grid">
+      <dt>Edad</dt><dd>{{ gestion.solicitud.edad }}</dd>
+      <dt>Sexo</dt><dd>{{ gestion.solicitud.get_sexo_display }}</dd>
+      <dt>Prioridad administrativa</dt>
+      <dd>
+        <span class="priority-badge {{ gestion.solicitud.priorizacion_solicitud|prioridad_css }}">
+          {{ gestion.solicitud.get_priorizacion_solicitud_display }} ({{ gestion.solicitud.puntaje_prioridad }} pts)
+        </span>
+      </dd>
+      <dt>Decision actual</dt><dd>{{ gestion.get_decision_display }}</dd>
+      <dt>Prioridad clinica</dt><dd>{{ gestion.get_prioridad_clinica_display|default:"No asignada" }}</dd>
+      <dt>Motivo de rechazo</dt><dd>{{ gestion.motivo_rechazo|default:"No aplica" }}</dd>
+      <dt>Decidido por</dt><dd>{% if gestion.decidido_por %}{{ gestion.decidido_por.email|default:gestion.decidido_por.username }}{% else %}Sin decision{% endif %}</dd>
+      <dt>Fecha de decision</dt><dd>{{ gestion.fecha_decision|default:"Sin decision" }}</dd>
+    </dl>
+    <section>
+      <h3>Condiciones declaradas</h3>
+      {% if gestion.solicitud.Neurodivergente_prais_gestante %}
+        <p>{{ gestion.solicitud.get_Neurodivergente_prais_gestante_tipo_display }}{% if gestion.solicitud.Neurodivergente_prais_gestante_otro %} - {{ gestion.solicitud.Neurodivergente_prais_gestante_otro }}{% endif %}</p>
+      {% else %}
+        <p>Sin condiciones declaradas</p>
+      {% endif %}
+      {% if gestion.solicitud.credendencial_cuidador_discapacidad %}
+        <p>Credencial declarada. {% if gestion.solicitud.credencial_cuidador_discapacidad_foto %}Foto adjunta.{% else %}Sin foto adjunta.{% endif %}</p>
+        {% if foto_credencial_data_url %}
+          <img class="credential-photo" src="{{ foto_credencial_data_url }}" alt="Foto de credencial de cuidador">
+        {% endif %}
+      {% endif %}
+    </section>
+    <section>
+      <h3>Desglose de prioridad administrativa</h3>
+      <ul class="priority-breakdown">
+        {% for factor in gestion.solicitud|desglose_prioridad %}
+          <li><span>{{ factor.descripcion }}</span><strong>+{{ factor.puntaje }}</strong></li>
+        {% empty %}
+          <li><span>sin factores de prioridad</span><strong>+0</strong></li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+  <footer class="modal-actions">
+    {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+    {% if puede_escribir %}
+      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1" data-fragment-form aria-label="Guardar decision">
+        {% csrf_token %}
+        {% for prioridad, etiqueta in form.fields.prioridad_clinica.choices %}
+          {% if prioridad %}
+            <button type="submit" name="decision" value="ACEPTADA" data-extra-name="prioridad_clinica" data-extra-value="{{ prioridad }}">Aceptar {{ etiqueta }}</button>
+          {% endif %}
+        {% endfor %}
+      </form>
+      <details class="reject-box">
+        <summary>Rechazar</summary>
+        <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1" data-fragment-form>
+          {% csrf_token %}
+          <input type="hidden" name="decision" value="RECHAZADA">
+          {{ form.motivo_rechazo }}
+          <button type="submit">Confirmar rechazo</button>
+          {{ form.motivo_rechazo.errors }}
+        </form>
+      </details>
+      <form method="post" action="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1" data-fragment-form>
+        {% csrf_token %}
+        <button type="submit" name="decision" value="NO_APLICA">No aplica</button>
+      </form>
+      {{ form.prioridad_clinica.errors }}
+    {% else %}
+      <div class="read-only-trace">
+        <strong>Vista de solo lectura</strong>
+        <p>Decision: {{ gestion.get_decision_display }}. Intentos: {{ gestion.intentos_contacto }}. Ultima accion: {{ gestion.get_ultima_accion_contacto_display|default:"Sin contacto" }}.</p>
+      </div>
+    {% endif %}
+  </footer>
+</article>

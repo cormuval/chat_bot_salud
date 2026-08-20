@@ -115,6 +115,8 @@ def selector_detalle(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_selector(perfil):
         return redirect("gestion:sin_acceso")
+    es_fragmento = request.GET.get("fragmento") == "1"
+    template = "gestion/_detalle_selector.html" if es_fragmento else "gestion/selector_detalle.html"
     gestion = gestion_alcanzable_o_404(perfil, pk)
     puede_escribir = puede_escribir_selector(perfil)
     form = DecisionSelectorForm(request.POST or None)
@@ -124,19 +126,44 @@ def selector_detalle(request, pk):
         if form.is_valid():
             try:
                 form.guardar(gestion, request.user)
+                mensaje_resultado = {
+                    Gestion.Decision.ACEPTADA: f"Aceptada como {gestion.get_prioridad_clinica_display()}",
+                    Gestion.Decision.RECHAZADA: "Rechazada",
+                    Gestion.Decision.NO_APLICA: "Marcada como no aplica",
+                }.get(gestion.decision, "Decision registrada")
+                if es_fragmento:
+                    siguiente = Gestion.objects.cola_selector(perfil).first()
+                    if siguiente is None:
+                        return render(request, "gestion/_cola_selector_vacia.html")
+                    gestion = gestion_alcanzable_o_404(perfil, siguiente.pk)
+                    form = DecisionSelectorForm()
+                    foto_credencial_data_url = _foto_credencial_data_url(gestion)
+                    return render(
+                        request,
+                        "gestion/_detalle_selector.html",
+                        {
+                            "perfil": perfil,
+                            "gestion": gestion,
+                            "form": form,
+                            "puede_escribir": puede_escribir,
+                            "foto_credencial_data_url": foto_credencial_data_url,
+                            "mensaje_resultado": mensaje_resultado,
+                        },
+                    )
                 messages.success(request, "Decision registrada.")
                 return redirect("gestion:selector_lista")
             except ValidationError as exc:
                 form.add_error(None, exc)
     return render(
         request,
-        "gestion/selector_detalle.html",
+        template,
         {
             "perfil": perfil,
             "gestion": gestion,
             "form": form,
             "puede_escribir": puede_escribir,
             "foto_credencial_data_url": _foto_credencial_data_url(gestion),
+            "mensaje_resultado": "",
         },
     )
 

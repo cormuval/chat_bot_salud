@@ -973,6 +973,71 @@ class SelectorViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/sin-acceso/", response["Location"])
 
+    def test_fragmento_selector_no_incluye_layout_y_respeta_permiso(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-detail"', html=False)
+        self.assertNotContains(response, "<html", html=False)
+        self.assertContains(response, "Guardar decision")
+
+    def test_fragmento_selector_solo_lectura_no_muestra_controles(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Vista de solo lectura")
+        self.assertNotContains(response, "Aceptar urgente")
+
+    def test_post_fragmento_selector_devuelve_siguiente_caso(self):
+        primero = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+            detalle_motivo="primer caso",
+        ).gestion
+        segundo = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+            detalle_motivo="segundo caso",
+        ).gestion
+        response = self.client.post(
+            f"/selector/{primero.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.ACEPTADA, "prioridad_clinica": Solicitud.Prioridad.ALTA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-detail"', html=False)
+        self.assertContains(response, f'data-current-row-id="{segundo.pk}"', html=False)
+        self.assertContains(response, "Aceptada como Alta")
+
+    def test_post_fragmento_selector_ultimo_devuelve_cola_vacia(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-empty"', html=False)
+        self.assertContains(response, "No quedan casos pendientes")
+
+    def test_post_fragmento_selector_con_error_devuelve_mismo_parcial(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.ACEPTADA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-current-row-id="%s"' % gestion.pk, html=False)
+        self.assertContains(response, "Debe indicar prioridad clinica")
+
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
 class ComunicadorViewsTests(TestCase):
