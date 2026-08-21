@@ -60,6 +60,9 @@ button { cursor: pointer; }
 .gestion-brand p, .session-box p { margin: 2px 0 0; color: var(--muted); }
 .session-box { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; justify-content: flex-end; }
 .session-pill { padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; background: #eef6ff; color: var(--primary-700); font-weight: 700; }
+.session-logout { margin: 0; }
+.session-logout button { padding: 0; border: 0; background: none; color: var(--primary-700); font: inherit; text-decoration: underline; cursor: pointer; }
+.session-logout button:hover, .session-logout button:focus { color: var(--primary); }
 
 .gestion-nav {
   display: flex;

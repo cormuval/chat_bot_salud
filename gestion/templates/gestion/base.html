@@ -20,7 +20,11 @@
           <span>{{ request.user.email|default:request.user.username }}</span>
           <span class="session-pill">{{ perfil.get_rol_display }}</span>
           <span class="muted">{{ perfil.centro }}</span>
-          <a href="{% url 'oidc_logout' %}">Cerrar sesion</a>
+          {# El logout de mozilla-django-oidc solo acepta POST: por GET responde 405. #}
+          <form method="post" action="{% url 'oidc_logout' %}" class="session-logout">
+            {% csrf_token %}
+            <button type="submit">Cerrar sesion</button>
+          </form>
         </div>
       {% endif %}
     </header>

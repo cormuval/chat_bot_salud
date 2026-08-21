@@ -386,6 +386,35 @@ class RutasDeLoginTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("no tiene acceso", response.content.decode("utf-8").lower())
 
+    def test_logout_por_get_no_esta_permitido(self):
+        # mozilla-django-oidc solo cierra sesion por POST; por GET responde 405.
+        # Si algun dia se enlaza el logout con un <a href>, este test lo delata.
+        response = self.client.get("/oidc/logout/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 405)
+
+    def test_logout_por_post_cierra_la_sesion(self):
+        usuario = User.objects.create_user(
+            username="selector", email="selector@cmvalparaiso.cl", password="x"
+        )
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=Centro.objects.get(pk=620),
+        )
+        self.client.force_login(usuario)
+
+        # La cabecera debe ofrecer el logout como formulario POST, no como enlace.
+        pagina = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        html = pagina.content.decode("utf-8")
+        self.assertIn('action="/oidc/logout/"', html)
+        self.assertNotIn('href="/oidc/logout/"', html)
+
+        response = self.client.post("/oidc/logout/", HTTP_HOST="gestion.localhost")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/sin-acceso/")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
 class PanelRequiereLoginTests(TestCase):
