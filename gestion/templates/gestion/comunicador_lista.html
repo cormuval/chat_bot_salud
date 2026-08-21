@@ -1,23 +1,18 @@
 {% extends "gestion/base.html" %}
+{% load gestion_ui %}
 {% block title %}Tabla del comunicador{% endblock %}
+{% block body_attrs %}data-gestion-page="comunicador"{% endblock %}
 {% block content %}
-<h1>Tabla del comunicador</h1>
-<table>
-  <thead><tr><th>Paciente</th><th>Telefono</th><th>Prioridad</th><th>Intentos</th><th>Ultimo intento</th><th>Motivo</th><th></th></tr></thead>
-  <tbody>
-    {% for gestion in gestiones %}
-      <tr>
-        <td>{{ gestion.solicitud.nombre }}</td>
-        <td>{{ gestion.solicitud.telefono }}</td>
-        <td>{% if gestion.decision == "ACEPTADA" %}{{ gestion.get_prioridad_clinica_display }}{% else %}Rechazada{% endif %}</td>
-        <td>{{ gestion.intentos_contacto }}</td>
-        <td>{{ gestion.fecha_ultimo_intento|default:"-" }}</td>
-        <td>{{ gestion.motivo_rechazo|default:"-" }}</td>
-        <td><a href="{% url 'gestion:comunicador_detalle' gestion.pk %}">Abrir</a></td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="7">No hay casos pendientes de comunicacion.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<section class="page-title">
+  <div>
+    <h2>Tabla del comunicador</h2>
+    <p>Priorice llamados pendientes y avisos de rechazo.</p>
+  </div>
+</section>
+
+<h3>Aceptadas - llamar por telefono</h3>
+{% include "gestion/_tabla_comunicador_grupo.html" with gestiones=gestiones_aceptadas grupo="aceptadas" %}
+
+<h3>Rechazadas - avisar por WhatsApp</h3>
+{% include "gestion/_tabla_comunicador_grupo.html" with gestiones=gestiones_rechazadas grupo="rechazadas" %}
 {% endblock %}

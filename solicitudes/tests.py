@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import Centro, Solicitud
-from .priorizacion import calcular_prioridad
+from .priorizacion import calcular_prioridad, desglosar_prioridad
 from .validators import formatear_telefono_con_codigo_pais, validar_rut_chileno, validar_telefono_chileno
 
 
@@ -224,3 +224,55 @@ class SolicitudTests(TestCase):
         self.assertEqual(solicitud.credencial_cuidador_discapacidad_foto, "data:image/png;base64,AAA")
         self.assertEqual(solicitud.Neurodivergente_prais_gestante_tipo, "OTRO")
         self.assertEqual(solicitud.Neurodivergente_prais_gestante_otro, "otra condicion")
+
+
+class DesglosePrioridadTests(TestCase):
+    def test_desglose_suma_el_mismo_puntaje_que_calcular_prioridad(self):
+        casos = [
+            {"detalle_motivo": "control", "edad": 40},
+            {"detalle_motivo": "dolor pecho", "edad": 68},
+            {
+                "detalle_motivo": "vomitos con diarrea",
+                "edad": 4,
+                "credendencial_cuidador_discapacidad": True,
+                "Neurodivergente_prais_gestante": True,
+            },
+        ]
+        for datos in casos:
+            with self.subTest(datos=datos):
+                desglose = desglosar_prioridad(datos)
+                self.assertEqual(
+                    sum(factor["puntaje"] for factor in desglose),
+                    calcular_prioridad(datos)["puntaje"],
+                )
+
+    def test_desglose_identifica_factores_concretos(self):
+        desglose = desglosar_prioridad(
+            {
+                "motivo": "dolor pecho",
+                "detalle_motivo": "adulto mayor con fiebre",
+                "edad": 68,
+                "credendencial_cuidador_discapacidad": True,
+            }
+        )
+        self.assertEqual(
+            desglose,
+            [
+                {
+                    "codigo": "palabra_urgente",
+                    "descripcion": 'palabra clave "dolor pecho"',
+                    "puntaje": 4,
+                },
+                {
+                    "codigo": "palabra_moderada",
+                    "descripcion": 'palabra clave "fiebre"',
+                    "puntaje": 1,
+                },
+                {"codigo": "edad", "descripcion": "edad 68 anos", "puntaje": 2},
+                {
+                    "codigo": "credencial",
+                    "descripcion": "credencial de cuidador",
+                    "puntaje": 2,
+                },
+            ],
+        )

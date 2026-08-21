@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
@@ -57,6 +58,15 @@ def _advertir_cierre_automatico(request, gestion):
             "el registro se aplico igualmente.",
         )
 
+
+def _texto_correccion_selector(gestion):
+    if gestion.decision == Gestion.Decision.RECHAZADA:
+        from .templatetags.gestion_ui import horas_restantes_rechazo
+
+        return horas_restantes_rechazo(gestion)
+    return "Sin intentos registrados"
+
+
 @login_required
 def panel(request):
     perfil = obtener_perfil_activo(request.user)
@@ -79,6 +89,14 @@ def selector_lista(request):
     if perfil is None or not puede_usar_selector(perfil):
         return redirect("gestion:sin_acceso")
     mostrar_no_aplica = puede_ver_no_aplica(perfil)
+    conteos_selector = {
+        "pendientes": Gestion.objects.cola_selector(perfil).count(),
+        "decididas": Gestion.objects.decididas_corregibles_selector(perfil).count(),
+        "no_aplica": Gestion.objects.no_aplica_selector(perfil).count()
+        if mostrar_no_aplica
+        else 0,
+    }
+    mostrar_columna_centro = perfil.centros_permitidos().count() > 1
     seccion = request.GET.get("seccion", "pendientes")
     if seccion == "decididas":
         gestiones = Gestion.objects.decididas_corregibles_selector(perfil)
@@ -96,6 +114,8 @@ def selector_lista(request):
             "puede_escribir": puede_escribir_selector(perfil),
             "seccion": seccion,
             "mostrar_no_aplica": mostrar_no_aplica,
+            "conteos_selector": conteos_selector,
+            "mostrar_columna_centro": mostrar_columna_centro,
         },
     )
 
@@ -105,6 +125,13 @@ def selector_detalle(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_selector(perfil):
         return redirect("gestion:sin_acceso")
+    es_fragmento = request.GET.get("fragmento") == "1"
+    template = "gestion/_detalle_selector.html" if es_fragmento else "gestion/selector_detalle.html"
+    seccion_origen = request.GET.get("seccion", "pendientes")
+    if seccion_origen not in {"pendientes", "decididas", "no_aplica"}:
+        seccion_origen = "pendientes"
+    if seccion_origen == "no_aplica" and not puede_ver_no_aplica(perfil):
+        seccion_origen = "pendientes"
     gestion = gestion_alcanzable_o_404(perfil, pk)
     puede_escribir = puede_escribir_selector(perfil)
     form = DecisionSelectorForm(request.POST or None)
@@ -114,19 +141,80 @@ def selector_detalle(request, pk):
         if form.is_valid():
             try:
                 form.guardar(gestion, request.user)
+                mensaje_resultado = {
+                    Gestion.Decision.ACEPTADA: f"Aceptada como {gestion.get_prioridad_clinica_display()}",
+                    Gestion.Decision.RECHAZADA: "Rechazada",
+                    Gestion.Decision.NO_APLICA: "Marcada como no aplica",
+                }.get(gestion.decision, "Decision registrada")
+                if es_fragmento:
+                    seccion_destino = {
+                        Gestion.Decision.PENDIENTE: "pendientes",
+                        Gestion.Decision.ACEPTADA: "decididas",
+                        Gestion.Decision.RECHAZADA: "decididas",
+                        Gestion.Decision.NO_APLICA: "no_aplica",
+                    }[gestion.decision]
+                    accion_fila = "keep" if seccion_origen == seccion_destino else "remove"
+                    if accion_fila == "keep":
+                        siguiente = gestion
+                    elif seccion_origen == "decididas":
+                        siguiente = Gestion.objects.decididas_corregibles_selector(perfil).first()
+                    elif seccion_origen == "no_aplica":
+                        siguiente = Gestion.objects.no_aplica_selector(perfil).first()
+                    else:
+                        siguiente = Gestion.objects.cola_selector(perfil).first()
+                    if siguiente is None:
+                        return render(
+                            request,
+                            "gestion/_cola_selector_vacia.html",
+                            {
+                                "seccion_origen": seccion_origen,
+                                "seccion_destino": seccion_destino,
+                                "accion_fila": accion_fila,
+                            },
+                        )
+                    gestion = gestion_alcanzable_o_404(perfil, siguiente.pk)
+                    form = DecisionSelectorForm()
+                    foto_credencial_data_url = _foto_credencial_data_url(gestion)
+                    return render(
+                        request,
+                        "gestion/_detalle_selector.html",
+                        {
+                            "perfil": perfil,
+                            "gestion": gestion,
+                            "form": form,
+                            "puede_escribir": puede_escribir,
+                            "foto_credencial_data_url": foto_credencial_data_url,
+                            "mensaje_resultado": mensaje_resultado,
+                            "es_fragmento": es_fragmento,
+                            "seccion_origen": seccion_origen,
+                            "seccion_destino": seccion_destino,
+                            "accion_fila": accion_fila,
+                            "texto_correccion_fila": _texto_correccion_selector(gestion),
+                        },
+                    )
                 messages.success(request, "Decision registrada.")
-                return redirect("gestion:selector_lista")
+                if seccion_origen == "pendientes":
+                    return redirect("gestion:selector_lista")
+                return HttpResponseRedirect(
+                    f"{reverse('gestion:selector_lista')}?seccion={seccion_origen}"
+                )
             except ValidationError as exc:
                 form.add_error(None, exc)
     return render(
         request,
-        "gestion/selector_detalle.html",
+        template,
         {
             "perfil": perfil,
             "gestion": gestion,
             "form": form,
             "puede_escribir": puede_escribir,
             "foto_credencial_data_url": _foto_credencial_data_url(gestion),
+            "mensaje_resultado": "",
+            "es_fragmento": es_fragmento,
+            "seccion_origen": seccion_origen,
+            "seccion_destino": seccion_origen,
+            "accion_fila": "keep",
+            "texto_correccion_fila": _texto_correccion_selector(gestion),
         },
     )
 
@@ -136,13 +224,21 @@ def comunicador_lista(request):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_comunicador(perfil):
         return redirect("gestion:sin_acceso")
-    gestiones = Gestion.objects.tabla_comunicador(perfil)
+    gestiones = list(Gestion.objects.tabla_comunicador(perfil))
+    gestiones_aceptadas = [
+        gestion for gestion in gestiones if gestion.decision == Gestion.Decision.ACEPTADA
+    ]
+    gestiones_rechazadas = [
+        gestion for gestion in gestiones if gestion.decision == Gestion.Decision.RECHAZADA
+    ]
     return render(
         request,
         "gestion/comunicador_lista.html",
         {
             "perfil": perfil,
             "gestiones": gestiones,
+            "gestiones_aceptadas": gestiones_aceptadas,
+            "gestiones_rechazadas": gestiones_rechazadas,
             "puede_escribir": puede_escribir_comunicador(perfil),
         },
     )
@@ -153,6 +249,8 @@ def comunicador_detalle(request, pk):
     perfil = obtener_perfil_activo(request.user)
     if perfil is None or not puede_usar_comunicador(perfil):
         return redirect("gestion:sin_acceso")
+    es_fragmento = request.GET.get("fragmento") == "1"
+    template = "gestion/_detalle_comunicador.html" if es_fragmento else "gestion/comunicador_detalle.html"
     if request.method == "POST":
         gestion = _gestion_para_post_comunicador_o_404(perfil, pk)
     else:
@@ -167,19 +265,30 @@ def comunicador_detalle(request, pk):
             try:
                 form.guardar(gestion, request.user)
                 _advertir_cierre_automatico(request, gestion)
+                if es_fragmento:
+                    return render(
+                        request,
+                        "gestion/_confirmacion_comunicador.html",
+                        {
+                            "perfil": perfil,
+                            "gestion": gestion,
+                            "mensaje_resultado": "Contacto registrado.",
+                        },
+                    )
                 messages.success(request, "Contacto registrado.")
                 return redirect("gestion:comunicador_lista")
             except ValidationError as exc:
                 form.add_error(None, exc)
     return render(
         request,
-        "gestion/comunicador_detalle.html",
+        template,
         {
             "perfil": perfil,
             "gestion": gestion,
             "form": form,
             "form_whatsapp": form_whatsapp,
             "puede_escribir": puede_escribir,
+            "es_fragmento": es_fragmento,
         },
     )
 

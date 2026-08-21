@@ -1,0 +1,12 @@
+<section class="modal-panel" data-fragment-kind="comunicador-confirmation" data-case-resolved="{{ gestion.cerrada_en|yesno:'true,false' }}">
+  <header class="modal-header">
+    <h2 data-dialog-focus tabindex="-1">Contacto registrado</h2>
+    <button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>
+  </header>
+  <div class="modal-body">
+    <p>{{ mensaje_resultado }}{% if not gestion.cerrada_en %} El caso permanece en la cola.{% endif %}</p>
+  </div>
+  <footer class="modal-actions">
+    <button type="button" data-dialog-close>Cerrar</button>
+  </footer>
+</section>

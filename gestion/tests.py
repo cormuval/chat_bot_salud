@@ -1,5 +1,6 @@
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -9,6 +10,7 @@ from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
 from django.http import Http404
 from django.test import TestCase, TransactionTestCase, override_settings
+from django.template import Context, Template
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
@@ -383,6 +385,35 @@ class RutasDeLoginTests(TestCase):
         response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 200)
         self.assertIn("no tiene acceso", response.content.decode("utf-8").lower())
+
+    def test_logout_por_get_no_esta_permitido(self):
+        # mozilla-django-oidc solo cierra sesion por POST; por GET responde 405.
+        # Si algun dia se enlaza el logout con un <a href>, este test lo delata.
+        response = self.client.get("/oidc/logout/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 405)
+
+    def test_logout_por_post_cierra_la_sesion(self):
+        usuario = User.objects.create_user(
+            username="selector", email="selector@cmvalparaiso.cl", password="x"
+        )
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=Centro.objects.get(pk=620),
+        )
+        self.client.force_login(usuario)
+
+        # La cabecera debe ofrecer el logout como formulario POST, no como enlace.
+        pagina = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        html = pagina.content.decode("utf-8")
+        self.assertIn('action="/oidc/logout/"', html)
+        self.assertNotIn('href="/oidc/logout/"', html)
+
+        response = self.client.post("/oidc/logout/", HTTP_HOST="gestion.localhost")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/sin-acceso/")
+        self.assertNotIn("_auth_user_id", self.client.session)
 
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
@@ -895,6 +926,51 @@ class SelectorViewsTests(TestCase):
         self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
         self.assertEqual(gestion.prioridad_clinica, Solicitud.Prioridad.ALTA)
 
+    def test_post_sin_fragmento_redirige_a_lista_y_no_devuelve_parcial(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, "/selector/")
+        self.assertNotContains(
+            response, 'data-fragment-kind="selector-detail"', status_code=302
+        )
+
+    def test_detalle_completo_usa_acciones_sin_fragmento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/", HTTP_HOST="gestion.localhost"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "?fragmento=1")
+        self.assertContains(
+            response,
+            f'action="/selector/{gestion.pk}/?seccion=pendientes"',
+            html=False,
+        )
+
+    def test_detalle_completo_conserva_seccion_en_acciones_sin_javascript(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?seccion=decididas",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(
+            response,
+            f'action="/selector/{gestion.pk}/?seccion=decididas"',
+            html=False,
+        )
+
     def test_rechazar_registra_motivo(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         response = self.client.post(
@@ -971,6 +1047,185 @@ class SelectorViewsTests(TestCase):
         response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
         self.assertIn("/sin-acceso/", response["Location"])
+
+    def test_fragmento_selector_no_incluye_layout_y_respeta_permiso(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-detail"', html=False)
+        self.assertNotContains(response, "<html", html=False)
+        self.assertContains(response, "Guardar decision")
+
+    def test_fragmento_selector_solo_lectura_no_muestra_controles(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Vista de solo lectura")
+        self.assertNotContains(response, "Aceptar urgente")
+
+    def test_post_fragmento_selector_devuelve_siguiente_caso(self):
+        primero = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+            detalle_motivo="primer caso",
+        ).gestion
+        segundo = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+            detalle_motivo="segundo caso",
+        ).gestion
+        response = self.client.post(
+            f"/selector/{primero.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.ACEPTADA, "prioridad_clinica": Solicitud.Prioridad.ALTA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-detail"', html=False)
+        self.assertContains(response, f'data-current-row-id="{segundo.pk}"', html=False)
+        self.assertContains(response, "Aceptada como Alta")
+
+    def test_post_fragmento_selector_desde_pendientes_expone_transicion_de_contadores(self):
+        primero = crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+        ).gestion
+        crear_solicitud_base(
+            centro_salud=self.centro,
+            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+        )
+
+        response = self.client.post(
+            f"/selector/{primero.pk}/?fragmento=1&seccion=pendientes",
+            {
+                "decision": Gestion.Decision.ACEPTADA,
+                "prioridad_clinica": Solicitud.Prioridad.ALTA,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
+        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
+        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
+
+    def test_post_fragmento_selector_no_aplica_expone_transicion_de_contadores(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1&seccion=pendientes",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
+        self.assertContains(response, 'data-selector-destination-section="no_aplica"', html=False)
+        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
+
+    def test_post_fragmento_selector_desde_decididas_conserva_caso_corregible(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1&seccion=decididas",
+            {
+                "decision": Gestion.Decision.RECHAZADA,
+                "motivo_rechazo": self.motivo.pk,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, f'data-current-row-id="{gestion.pk}"', html=False)
+        self.assertContains(response, 'data-selector-source-section="decididas"', html=False)
+        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
+        self.assertContains(response, 'data-selector-row-action="keep"', html=False)
+        self.assertContains(response, 'data-selector-correction-text="quedan', html=False)
+
+    def test_post_sin_fragmento_selector_redirige_a_seccion_de_origen(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?seccion=decididas",
+            {
+                "decision": Gestion.Decision.RECHAZADA,
+                "motivo_rechazo": self.motivo.pk,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertRedirects(
+            response,
+            "/selector/?seccion=decididas",
+            fetch_redirect_response=False,
+        )
+
+    def test_post_fragmento_selector_ultimo_devuelve_cola_vacia(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.NO_APLICA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-empty"', html=False)
+        self.assertContains(response, "No quedan casos en esta seccion")
+
+    def test_post_fragmento_selector_con_error_devuelve_mismo_parcial(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.ACEPTADA},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-current-row-id="%s"' % gestion.pk, html=False)
+        self.assertContains(response, "Debe indicar prioridad clinica")
+
+    def test_post_fragmento_selector_rechazo_invalido_muestra_error_y_reabre_detalle(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.post(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            {"decision": Gestion.Decision.RECHAZADA},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Debe indicar motivo de rechazo")
+        self.assertContains(response, '<details class="reject-box" open>', html=False)
+        self.assertContains(response, 'data-dialog-error-focus', html=False)
+
+    def test_detalle_selector_completo_acepta_prioridad_sin_javascript(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+
+        response = self.client.get(
+            f"/selector/{gestion.pk}/",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(
+            response,
+            'name="prioridad_clinica" value="ALTA"',
+            html=False,
+        )
+        response = self.client.post(
+            f"/selector/{gestion.pk}/",
+            {
+                "decision": Gestion.Decision.ACEPTADA,
+                "prioridad_clinica": Solicitud.Prioridad.ALTA,
+            },
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertRedirects(response, "/selector/", fetch_redirect_response=False)
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.decision, Gestion.Decision.ACEPTADA)
+        self.assertEqual(gestion.prioridad_clinica, Solicitud.Prioridad.ALTA)
 
 
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
@@ -1249,6 +1504,93 @@ class ComunicadorViewsTests(TestCase):
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 0)
 
+    def test_detalle_comunicador_completo_envia_contacto_sin_fragmento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'action="/comunicador/{gestion.pk}/"',
+            html=False,
+        )
+        self.assertNotContains(response, "?fragmento=1", html=False)
+
+    def test_fragmento_comunicador_no_incluye_layout_y_muestra_historial(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="primer-token")
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="comunicador-detail"', html=False)
+        self.assertNotContains(response, "<html", html=False)
+        self.assertContains(response, "Historial de contacto")
+        self.assertContains(response, "1 intento")
+
+    def test_fragmento_comunicador_muestra_vista_previa_whatsapp(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            nombre="Ana Perez",
+        ).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Vista previa de WhatsApp")
+        self.assertContains(response, "Ana Perez")
+
+    def test_fragmento_comunicador_invalido_deshabilita_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="123").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Telefono invalido para WhatsApp")
+        self.assertContains(response, "disabled")
+
+    def test_post_fragmento_comunicador_devuelve_confirmacion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        token = response.context["form"]["token_contacto"].value()
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            {"accion": "NO_CONTESTA", "token_contacto": token},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="comunicador-confirmation"', html=False)
+        self.assertContains(response, "Contacto registrado")
+        self.assertContains(response, 'data-case-resolved="false"', html=False)
+        self.assertContains(response, "El caso permanece en la cola")
+
+    def test_post_fragmento_comunicador_agendada_invalida_muestra_error_y_reabre_agenda(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            {"accion": "AGENDADA"},
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Debe indicar fecha y hora acordadas")
+        self.assertContains(response, '<details class="agenda-box" open>', html=False)
+        self.assertContains(response, 'data-dialog-error-focus', html=False)
+
 
 class CerrarRechazadosCommandTests(TestCase):
     def setUp(self):
@@ -1291,3 +1633,339 @@ class CerrarRechazadosCommandTests(TestCase):
         call_command("cerrar_rechazados")
         gestion.refresh_from_db()
         self.assertIsNone(gestion.cerrada_en)
+
+
+class GestionUiHelpersTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user(
+            "selector-ui@cmvalparaiso.cl", email="selector-ui@cmvalparaiso.cl"
+        )
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos para resolver su solicitud.",
+        )
+
+    def _render(self, source, context):
+        template = Template("{% load gestion_ui %}" + source)
+        return template.render(Context(context)).strip()
+
+    def test_prioridad_css_entrega_clase_estable(self):
+        html = self._render("{{ valor|prioridad_css }}", {"valor": Solicitud.Prioridad.URGENTE})
+        self.assertEqual(html, "prioridad--urgente")
+
+    def test_tiempo_relativo_entrega_horas_y_minutos(self):
+        hace_dos_horas = timezone.now() - timedelta(hours=2, minutes=10)
+        html = self._render("{{ fecha|tiempo_relativo }}", {"fecha": hace_dos_horas})
+        self.assertEqual(html, "hace 2 h")
+
+    def test_horas_restantes_rechazo_muestra_plazo(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=18, minutes=10)
+        )
+        gestion.refresh_from_db()
+        html = self._render("{{ gestion|horas_restantes_rechazo }}", {"gestion": gestion})
+        self.assertEqual(html, "quedan 5 h para avisar")
+
+    def test_telefono_whatsapp_valido_usa_url_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="123").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        html = self._render(
+            "{% if gestion|telefono_whatsapp_valido %}si{% else %}no{% endif %}",
+            {"gestion": gestion},
+        )
+        self.assertEqual(html, "no")
+
+    def test_mensaje_whatsapp_previo_reemplaza_nombre(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            nombre="Ana Perez",
+        ).gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        html = self._render("{{ gestion|mensaje_whatsapp_previo }}", {"gestion": gestion})
+        self.assertIn("Ana Perez", html)
+        self.assertNotIn("{nombre}", html)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GestionBaseLayoutTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user(
+            "selector-base@cmvalparaiso.cl", email="selector-base@cmvalparaiso.cl"
+        )
+        PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.client.force_login(self.usuario)
+
+    def test_base_carga_css_js_y_datos_de_sesion(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, 'href="/static/css/gestion.css"', html=False)
+        self.assertContains(response, 'src="/static/js/gestion.js"', html=False)
+        self.assertContains(response, "selector-base@cmvalparaiso.cl")
+        self.assertContains(response, "Selector")
+        self.assertContains(response, str(self.centro))
+        self.assertContains(response, "Cerrar sesion")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GestionListasUiTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("selector-lista@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.SELECTOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_selector_lista_oculta_decision_y_centro_para_selector_de_un_centro(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            motivo="Dolor pecho",
+            detalle_motivo="Dolor pecho desde la noche anterior",
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+        ).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dolor pecho desde la noche anterior")
+        self.assertContains(response, "Urgente")
+        self.assertContains(
+            response,
+            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            html=False,
+        )
+        self.assertNotContains(response, "<th>Decision</th>", html=False)
+        self.assertNotContains(response, "<th>Centro</th>", html=False)
+
+    def test_selector_lista_muestra_centro_para_admin(self):
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+        crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "<th>Centro</th>", html=False)
+
+    def test_prioridad_en_lista_expone_desglose_en_hover_y_foco(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            motivo="dolor pecho",
+            detalle_motivo="adulto mayor",
+            edad=68,
+            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
+            puntaje_prioridad=6,
+        ).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "prioridad-detalle")
+        self.assertContains(response, 'tabindex="0"', html=False)
+        self.assertContains(
+            response,
+            f'aria-describedby="prioridad-{gestion.pk}"',
+            html=False,
+        )
+        self.assertContains(response, f'id="prioridad-{gestion.pk}"', html=False)
+        self.assertContains(response, 'role="tooltip"', html=False)
+        self.assertContains(response, "palabra clave &quot;dolor pecho&quot;", html=False)
+        self.assertContains(response, "edad 68 anos")
+        css = Path(__file__).resolve().parent.parent / "static" / "css" / "gestion.css"
+        self.assertIn(".priority-badge:focus + .prioridad-detalle", css.read_text())
+
+    def test_selector_vacio_usa_colspan_de_sus_columnas_visibles(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, '<td colspan="5">', html=False)
+
+    def test_selector_tabs_muestran_conteos(self):
+        pendiente = crear_solicitud_base(centro_salud=self.centro).gestion
+        decidida = crear_solicitud_base(centro_salud=self.centro).gestion
+        decidida.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        no_aplica = crear_solicitud_base(centro_salud=self.centro).gestion
+        no_aplica.marcar_no_aplica(self.usuario)
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "Pendientes")
+        self.assertContains(response, ">1<", html=False)
+        self.assertEqual(pendiente.decision, Gestion.Decision.PENDIENTE)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ComunicadorListaUiTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("comunicador-lista@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.COMUNICADOR,
+            centro=self.centro,
+        )
+        self.motivo = MotivoRechazo.objects.create(
+            nombre="Datos insuficientes",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_comunicador_separa_aceptadas_y_rechazadas(self):
+        aceptada = crear_solicitud_base(centro_salud=self.centro).gestion
+        aceptada.aceptar(self.usuario, Solicitud.Prioridad.URGENTE)
+        rechazada = crear_solicitud_base(centro_salud=self.centro).gestion
+        rechazada.rechazar(self.usuario, self.motivo)
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "Aceptadas - llamar por telefono")
+        self.assertContains(response, "Rechazadas - avisar por WhatsApp")
+        self.assertLess(
+            response.content.decode("utf-8").index("Aceptadas - llamar por telefono"),
+            response.content.decode("utf-8").index("Rechazadas - avisar por WhatsApp"),
+        )
+
+    def test_comunicador_marca_telefono_invalido_y_deshabilita_whatsapp(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="123").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "Telefono invalido para WhatsApp")
+        self.assertContains(response, "WhatsApp no disponible")
+        self.assertContains(response, "disabled")
+
+    def test_comunicador_muestra_tel_y_cuenta_regresiva_de_rechazo(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, telefono="+56949106239").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        Gestion.objects.filter(pk=gestion.pk).update(
+            fecha_decision=timezone.now() - timedelta(hours=18)
+        )
+        response = self.client.get("/comunicador/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, 'href="tel:+56949106239"', html=False)
+        self.assertContains(response, "quedan 5 h para avisar")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GestionAccesibilidadMarkupTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("ui-a11y@cmvalparaiso.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.usuario,
+            rol=PerfilUsuario.Rol.FULL,
+            centro=self.centro,
+        )
+        self.client.force_login(self.usuario)
+
+    def test_filas_clickeables_conservan_enlace_real(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(
+            response,
+            f'href="/selector/{gestion.pk}/?seccion=pendientes"',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            html=False,
+        )
+
+    def test_botones_de_modal_tienen_texto_de_accion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Aceptar Urgente")
+        self.assertContains(response, "Aceptar Alta")
+        self.assertContains(response, "Aceptar Media")
+        self.assertContains(response, "Aceptar Baja")
+        self.assertContains(response, "Confirmar rechazo")
+        self.assertContains(response, "No aplica")
+
+    def test_detalle_completo_no_muestra_cierre_de_modal_sin_efecto(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertNotContains(response, "data-dialog-close", html=False)
+
+    def test_modal_oculta_fecha_de_agenda_hasta_que_se_expande_la_accion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, '<details class="agenda-box">', html=False)
+
+    def test_js_de_fragmentos_no_reenvia_formularios_y_actualiza_contadores(self):
+        javascript = (
+            Path(__file__).resolve().parent.parent / "static" / "js" / "gestion.js"
+        ).read_text()
+        self.assertNotIn("form.submit()", javascript)
+        self.assertIn("data-selector-counter", javascript)
+        self.assertIn("data-selector-correction", javascript)
+        self.assertIn("dialogRequestInFlight", javascript)
+        self.assertIn("setDialogButtonsDisabled", javascript)
+        self.assertIn("data-dialog-focus", javascript)
+        self.assertIn("data-dialog-error-focus", javascript)
+        self.assertIn("No se pudo guardar. Intente nuevamente.", javascript)
+        submit_fragment = javascript[javascript.index("async function submitFragmentForm") :]
+        self.assertLess(
+            submit_fragment.index("const previousId = dialog"),
+            submit_fragment.index("const response = await fetch"),
+        )
+
+    def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
+        vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"
+        confirmacion = (
+            Path(__file__).resolve().parent
+            / "templates"
+            / "gestion"
+            / "_confirmacion_comunicador.html"
+        )
+
+        self.assertIn("data-dialog-focus", vacia.read_text())
+        self.assertIn("data-dialog-focus", confirmacion.read_text())
+
+    def test_vista_solo_lectura_muestra_traza_de_auditoria_completa(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="auditoria")
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+
+        selector = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        comunicador = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        for response in (selector, comunicador):
+            self.assertContains(response, "Decidido por")
+            self.assertContains(response, "Fecha de decision")
+            self.assertContains(response, "Intentos de contacto")
+            self.assertContains(response, "Ultima accion de contacto")
+            self.assertContains(response, "Motivo de cierre")
+
+    def test_formulario_de_contacto_fragmentado_conserva_accion_de_fragmento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(
+            response,
+            f'action="/comunicador/{gestion.pk}/?fragmento=1"',
+            html=False,
+        )

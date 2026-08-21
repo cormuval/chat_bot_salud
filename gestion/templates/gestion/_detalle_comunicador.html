@@ -1,0 +1,71 @@
+{% load gestion_ui %}
+<article class="modal-panel" data-fragment-kind="comunicador-detail" data-current-row-id="{{ gestion.pk }}">
+  <header class="modal-header">
+    <div>
+      <h2 data-dialog-focus tabindex="-1">{{ gestion.solicitud.nombre }}</h2>
+      <p><a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a> - {{ gestion.solicitud.centro_salud }}</p>
+    </div>
+    {% if es_fragmento %}<button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>{% endif %}
+  </header>
+  <div class="modal-body">
+    <section>
+      <h3>Solicitud</h3>
+      <p>{{ gestion.solicitud.motivo }} - {{ gestion.solicitud.detalle_motivo }}</p>
+      <p>Decision: {{ gestion.get_decision_display }}</p>
+      {% if gestion.decision == "ACEPTADA" %}
+        <p>Prioridad clinica: {{ gestion.get_prioridad_clinica_display }}</p>
+      {% else %}
+        <p>Motivo de rechazo: {{ gestion.motivo_rechazo }}</p>
+        <p class="warning-text">{{ gestion|horas_restantes_rechazo }}</p>
+      {% endif %}
+    </section>
+    <section>
+      <h3>Historial de contacto y auditoria</h3>
+      <dl class="detail-grid">
+        <dt>Decidido por</dt><dd>{% if gestion.decidido_por %}{{ gestion.decidido_por.email|default:gestion.decidido_por.username }}{% else %}Sin decision{% endif %}</dd>
+        <dt>Fecha de decision</dt><dd>{{ gestion.fecha_decision|default:"Sin decision" }}</dd>
+        <dt>Intentos de contacto</dt><dd>{{ gestion.intentos_contacto }} intento{{ gestion.intentos_contacto|pluralize }}</dd>
+        <dt>Ultimo intento</dt><dd>{{ gestion.fecha_ultimo_intento|default:"Sin intentos" }}</dd>
+        <dt>Contactado por</dt><dd>{% if gestion.contactado_por %}{{ gestion.contactado_por.email|default:gestion.contactado_por.username }}{% else %}Sin contacto{% endif %}</dd>
+        <dt>Ultima accion de contacto</dt><dd>{{ gestion.get_ultima_accion_contacto_display|default:"Sin contacto" }}</dd>
+        <dt>Motivo de cierre</dt><dd>{{ gestion.get_motivo_cierre_display|default:"Abierto" }}</dd>
+      </dl>
+    </section>
+    <section>
+      <h3>Vista previa de WhatsApp</h3>
+      {% if gestion|telefono_whatsapp_valido %}
+        <p class="message-preview">{{ gestion|mensaje_whatsapp_previo }}</p>
+      {% else %}
+        <p class="danger-text">Telefono invalido para WhatsApp</p>
+      {% endif %}
+    </section>
+  </div>
+  <footer class="modal-actions">
+    {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+    {% if puede_escribir %}
+      <form method="post" action="{% url 'gestion:comunicador_detalle' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-fragment-form>
+        {% csrf_token %}
+        {{ form.token_contacto }}
+        <details class="agenda-box"{% if form.fecha_hora_citacion.errors %} open{% endif %}>
+          <summary>Agendar cita</summary>
+          {{ form.fecha_hora_citacion }}
+          {% if form.fecha_hora_citacion.errors %}<div data-dialog-error-focus tabindex="-1">{{ form.fecha_hora_citacion.errors }}</div>{% endif %}
+          <button type="submit" name="accion" value="AGENDADA">Agendada</button>
+        </details>
+        <button type="submit" name="accion" value="NO_ACEPTA">El paciente no acepta</button>
+        <button type="submit" name="accion" value="NO_CONTESTA">No contesta</button>
+        <button type="submit" name="accion" value="NO_CONTACTADO">No se logro contactar</button>
+      </form>
+      <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}" data-whatsapp-form>
+        {% csrf_token %}
+        {{ form_whatsapp.token_contacto }}
+        <button type="submit" {% if not gestion|telefono_whatsapp_valido %}disabled{% endif %}>Abrir WhatsApp y registrar intento</button>
+      </form>
+    {% else %}
+      <div class="read-only-trace">
+        <strong>Vista de solo lectura</strong>
+        <p>La traza de decision, contacto y cierre se muestra en el detalle.</p>
+      </div>
+    {% endif %}
+  </footer>
+</article>
