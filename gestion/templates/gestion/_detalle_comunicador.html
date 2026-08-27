@@ -3,7 +3,13 @@
   <header class="modal-header">
     <div>
       <h2 data-dialog-focus tabindex="-1">{{ gestion.solicitud.nombre }}</h2>
-      <p><a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a> - {{ gestion.solicitud.centro_salud }}</p>
+      <dl class="modal-identity modal-identity--contacto">
+        <div>
+          <dt>Telefono</dt>
+          <dd><a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a></dd>
+        </div>
+        <div><dt>Centro</dt><dd>{{ gestion.solicitud.centro_salud }}</dd></div>
+      </dl>
     </div>
     {% if es_fragmento %}<button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>{% endif %}
   </header>
@@ -50,16 +56,31 @@
           <summary>Agendar cita</summary>
           {{ form.fecha_hora_citacion }}
           {% if form.fecha_hora_citacion.errors %}<div data-dialog-error-focus tabindex="-1">{{ form.fecha_hora_citacion.errors }}</div>{% endif %}
-          <button type="submit" name="accion" value="AGENDADA">Agendada</button>
+          <button class="btn--agendar" type="submit" name="accion" value="AGENDADA">
+            <svg class="icon" aria-hidden="true"><use href="#ic-calendar"></use></svg>
+            Agendada
+          </button>
         </details>
-        <button type="submit" name="accion" value="NO_ACEPTA">El paciente no acepta</button>
-        <button type="submit" name="accion" value="NO_CONTESTA">No contesta</button>
-        <button type="submit" name="accion" value="NO_CONTACTADO">No se logro contactar</button>
+        <button class="btn--rechazar" type="submit" name="accion" value="NO_ACEPTA">
+          <svg class="icon" aria-hidden="true"><use href="#ic-x"></use></svg>
+          El paciente no acepta
+        </button>
+        <button class="btn--neutro" type="submit" name="accion" value="NO_CONTESTA">
+          <svg class="icon" aria-hidden="true"><use href="#ic-phone"></use></svg>
+          No contesta
+        </button>
+        <button class="btn--rechazar" type="submit" name="accion" value="NO_CONTACTADO">
+          <svg class="icon" aria-hidden="true"><use href="#ic-x"></use></svg>
+          No se logro contactar
+        </button>
       </form>
       <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}" data-whatsapp-form>
         {% csrf_token %}
         {{ form_whatsapp.token_contacto }}
-        <button type="submit" {% if not gestion|telefono_whatsapp_valido %}disabled{% endif %}>Abrir WhatsApp y registrar intento</button>
+        <button class="btn--whatsapp" type="submit" {% if not gestion|telefono_whatsapp_valido %}disabled{% endif %}>
+          <svg class="icon" aria-hidden="true"><use href="#ic-whatsapp"></use></svg>
+          Abrir WhatsApp y registrar intento
+        </button>
       </form>
     {% else %}
       <div class="read-only-trace">

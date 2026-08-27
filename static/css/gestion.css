@@ -12,6 +12,7 @@
   --ok: #166534;
   --warn: #b45309;
   --danger: #b91c1c;
+  --wsp: #0d7d6f;
   --info: #0369a1;
   --prio-urgente: #b91c1c;
   --prio-alta: #c2410c;
@@ -173,6 +174,10 @@ button { cursor: pointer; }
 
 button,
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -192,6 +197,43 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
+.icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+.btn--confirmar {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: #fff;
+}
+.btn--agendar {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+.btn--whatsapp {
+  border-color: var(--wsp);
+  background: var(--wsp);
+  color: #fff;
+}
+.btn--rechazar {
+  border-color: var(--danger);
+  background: var(--surface);
+  color: var(--danger);
+}
+.btn--neutro {
+  border-color: var(--muted);
+  background: var(--surface);
+  color: var(--muted);
+}
+.modal-header { align-items: start; }
+.modal-header h2 { margin: 0 0 var(--space-2); }
+.modal-identity { margin: 0; display: grid; gap: 4px; }
+.modal-identity div { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: var(--space-2); }
+.modal-identity dt { color: var(--muted); font-weight: 800; }
+.modal-identity dd { margin: 0; }
+.modal-identity--contacto dd { font-size: 1.05rem; font-weight: 800; }
 .row-pending td:first-child { border-left: 4px solid var(--primary); }
 .message-preview {
   padding: var(--space-3);

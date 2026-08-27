@@ -9,6 +9,27 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body {% block body_attrs %}{% endblock %}>
+  <svg hidden aria-hidden="true" focusable="false">
+    <symbol id="ic-check" viewBox="0 0 24 24">
+      <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24">
+      <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="ic-minus" viewBox="0 0 24 24">
+      <path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="ic-calendar" viewBox="0 0 24 24">
+      <path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="ic-phone" viewBox="0 0 24 24">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.35 1.9.66 2.81a2 2 0 0 1-.45 2.11L8.09 9.87a16 16 0 0 0 6 6l1.23-1.23a2 2 0 0 1 2.11-.45c.91.31 1.85.53 2.81.66A2 2 0 0 1 22 16.92Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="ic-whatsapp" viewBox="0 0 24 24">
+      <path d="M20.5 11.8a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.4-5a8.4 8.4 0 1 1 16.1-3.7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M8.7 8.5c.2-.5.4-.5.8-.5h.6c.2 0 .4.1.5.4l.7 1.7c.1.3.1.5-.1.7l-.4.5c-.1.2-.2.3 0 .6.5.9 1.2 1.6 2.2 2.1.3.2.5.1.6-.1l.6-.7c.2-.2.4-.3.7-.2l1.6.8c.3.1.4.3.4.6 0 .7-.5 1.4-1.1 1.7-.7.3-2.8.1-5-1.7-2.2-1.8-3.1-4.1-3-4.9.1-.4.2-.7.4-1Z" fill="currentColor"/>
+    </symbol>
+  </svg>
   <div class="gestion-shell">
     <header class="gestion-header">
       <div class="gestion-brand">

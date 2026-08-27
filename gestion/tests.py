@@ -1969,3 +1969,62 @@ class GestionAccesibilidadMarkupTests(TestCase):
             f'action="/comunicador/{gestion.pk}/?fragmento=1"',
             html=False,
         )
+
+    def test_base_expone_sprite_svg_de_iconos_de_gestion(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, '<svg hidden aria-hidden="true"', html=False)
+        for symbol_id in (
+            "ic-check",
+            "ic-x",
+            "ic-minus",
+            "ic-calendar",
+            "ic-phone",
+            "ic-whatsapp",
+        ):
+            self.assertContains(response, f'id="{symbol_id}"', html=False)
+
+    def test_botones_de_selector_tienen_icono_texto_y_clase_de_accion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, 'class="btn--confirmar"', html=False)
+        self.assertContains(response, '<use href="#ic-check"></use>', html=False)
+        self.assertContains(response, 'class="btn--rechazar"', html=False)
+        self.assertContains(response, '<use href="#ic-x"></use>', html=False)
+        self.assertContains(response, 'class="btn--neutro"', html=False)
+        self.assertContains(response, '<use href="#ic-minus"></use>', html=False)
+        self.assertContains(response, "Aceptar Urgente")
+        self.assertContains(response, "Confirmar rechazo")
+        self.assertContains(response, "No aplica")
+
+    def test_encabezado_de_modal_selector_muestra_identidad_vertical(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, '<dl class="modal-identity">', html=False)
+        self.assertContains(response, "<dt>RUT</dt>", html=False)
+        self.assertContains(response, "<dt>Telefono</dt>", html=False)
+        self.assertContains(response, "<dt>Centro</dt>", html=False)
+
+    def test_encabezado_de_modal_comunicador_omite_rut_y_destaca_telefono(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(
+            response,
+            '<dl class="modal-identity modal-identity--contacto">',
+            html=False,
+        )
+        self.assertNotContains(response, "<dt>RUT</dt>", html=False)
+        self.assertContains(
+            response,
+            f'href="tel:{gestion.solicitud.telefono}"',
+            html=False,
+        )
