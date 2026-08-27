@@ -55,14 +55,9 @@ def telefono_whatsapp_valido(gestion):
 
 @register.filter
 def mensaje_whatsapp_previo(gestion):
-    if gestion.motivo_rechazo_id:
-        mensaje = gestion.motivo_rechazo.mensaje_paciente
-    else:
-        mensaje = (
-            "Hola {nombre}, le contactamos desde su centro de salud por su "
-            "solicitud de morbilidad."
-        )
-    return mensaje.replace("{nombre}", gestion.solicitud.nombre)
+    from gestion.mensajes import armar_mensaje_whatsapp, cuerpo_whatsapp_para_gestion
+
+    return armar_mensaje_whatsapp(gestion, cuerpo_whatsapp_para_gestion(gestion))
 
 
 @register.filter

@@ -14,7 +14,7 @@ from django.template import Context, Template
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
-from gestion.models import Gestion, MotivoRechazo, PerfilUsuario
+from gestion.models import Gestion, MotivoRechazo, PerfilUsuario, PlantillaWhatsapp
 from gestion.permisos import (
     gestion_alcanzable_o_404,
     puede_escribir_comunicador,
@@ -658,6 +658,32 @@ class GestionModeloTests(TestCase):
         url = gestion.url_whatsapp()
         self.assertTrue(url.startswith("https://wa.me/56949106239?text="))
         self.assertIn("Ana+Perez", url)
+
+    def test_url_whatsapp_aceptada_usa_plantilla_activa_y_partes_fijas(self):
+        PlantillaWhatsapp.objects.update_or_create(
+            clave="aceptada",
+            defaults={
+                "descripcion": "Aceptada",
+                "cuerpo": "Estamos intentando comunicarnos con usted.",
+            },
+        )
+        gestion = crear_solicitud_base(nombre="Ana Perez").gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        url = gestion.url_whatsapp()
+        self.assertTrue(url.startswith("https://wa.me/56949106239?text="))
+        self.assertIn("Hola%2C+Ana+Perez.", url)
+        self.assertIn("Estamos+intentando+comunicarnos+con+usted.", url)
+        self.assertIn("Muchas+gracias.", url)
+
+    def test_url_whatsapp_rechazada_usa_motivo_como_cuerpo_sin_duplicar_saludo(self):
+        self.motivo.mensaje_paciente = "Faltan datos para continuar."
+        self.motivo.save(update_fields=["mensaje_paciente"])
+        gestion = crear_solicitud_base(nombre="Ana Perez").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        url = gestion.url_whatsapp()
+        self.assertIn("Hola%2C+Ana+Perez.", url)
+        self.assertIn("Faltan+datos+para+continuar.", url)
+        self.assertEqual(url.count("Hola"), 1)
 
     def test_url_whatsapp_no_falla_con_marcador_desconocido(self):
         self.motivo.mensaje_paciente = "Hola {nombre}, centro {centro}."
@@ -1635,7 +1661,7 @@ class GestionUiHelpersTests(TestCase):
         )
         self.motivo = MotivoRechazo.objects.create(
             nombre="Datos insuficientes",
-            mensaje_paciente="Hola {nombre}, faltan datos para resolver su solicitud.",
+            mensaje_paciente="Faltan datos para resolver su solicitud.",
         )
 
     def _render(self, source, context):

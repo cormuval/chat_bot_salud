@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Gestion, MotivoRechazo, PerfilUsuario
+from .models import Gestion, MotivoRechazo, PerfilUsuario, PlantillaWhatsapp
 
 
 @admin.register(PerfilUsuario)
@@ -18,6 +18,13 @@ class MotivoRechazoAdmin(admin.ModelAdmin):
     list_filter = ("activo",)
     search_fields = ("nombre", "mensaje_paciente")
     ordering = ("orden", "nombre")
+
+
+@admin.register(PlantillaWhatsapp)
+class PlantillaWhatsappAdmin(admin.ModelAdmin):
+    list_display = ("clave", "descripcion", "activo")
+    list_filter = ("activo",)
+    search_fields = ("clave", "descripcion", "cuerpo")
 
 
 @admin.register(Gestion)
