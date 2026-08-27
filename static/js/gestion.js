@@ -66,6 +66,15 @@
     dialog.close();
   }
 
+  function removeResolvedCommunicatorRow(fragment, currentId) {
+    if (
+      fragment?.dataset.fragmentKind !== "comunicador-confirmation" ||
+      fragment.dataset.caseResolved !== "true" ||
+      !currentId
+    ) return;
+    document.querySelector(`[data-row-id="${currentId}"]`)?.remove();
+  }
+
   function focusDialogContent() {
     const focusTarget = dialog.querySelector(
       "[data-dialog-error-focus], [data-dialog-focus]"
@@ -102,6 +111,7 @@
   async function submitFragmentForm(form, submitter) {
     if (dialogRequestInFlight) return;
     dialogRequestInFlight = true;
+    const currentId = dialog.querySelector("[data-current-row-id]")?.dataset.currentRowId;
     setDialogButtonsDisabled(true);
     const data = new FormData(form);
     if (submitter && submitter.name) data.set(submitter.name, submitter.value);
@@ -117,6 +127,10 @@
       }
       const html = await response.text();
       if (replaceDialogWithFragment(response, html)) {
+        removeResolvedCommunicatorRow(
+          dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]'),
+          currentId
+        );
         dialogActionsCount += 1;
       }
     } finally {
