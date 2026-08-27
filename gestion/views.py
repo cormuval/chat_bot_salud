@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
+from .mensajes import url_whatsapp_para_gestion
 from .models import Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
@@ -256,7 +257,7 @@ def comunicador_detalle(request, pk):
         gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
     puede_escribir = puede_escribir_comunicador(perfil)
     form = AccionComunicadorForm(request.POST or None)
-    form_whatsapp = WhatsappComunicadorForm()
+    form_whatsapp = WhatsappComunicadorForm(gestion=gestion)
     if request.method == "POST":
         if not puede_escribir:
             return redirect("gestion:sin_acceso")
@@ -299,13 +300,28 @@ def registrar_whatsapp(request, pk):
     if perfil is None or not puede_escribir_comunicador(perfil):
         return redirect("gestion:sin_acceso")
     gestion = _gestion_para_post_comunicador_o_404(perfil, pk)
-    url = gestion.url_whatsapp()
+    es_fragmento = request.GET.get("fragmento") == "1"
+    form = WhatsappComunicadorForm(request.POST, gestion=gestion)
+    if not form.is_valid():
+        if es_fragmento:
+            return render(
+                request,
+                "gestion/_detalle_comunicador.html",
+                {
+                    "perfil": perfil,
+                    "gestion": gestion,
+                    "form": AccionComunicadorForm(),
+                    "form_whatsapp": form,
+                    "puede_escribir": True,
+                    "es_fragmento": True,
+                    "whatsapp_url": "",
+                },
+            )
+        messages.error(request, "El formulario de WhatsApp no es valido.")
+        return redirect("gestion:comunicador_detalle", pk=gestion.pk)
+    url = url_whatsapp_para_gestion(gestion, cuerpo=form.cleaned_data["cuerpo"])
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
-        return redirect("gestion:comunicador_detalle", pk=gestion.pk)
-    form = WhatsappComunicadorForm(request.POST)
-    if not form.is_valid():
-        messages.error(request, "El formulario de WhatsApp no es valido.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
     try:
         gestion.registrar_click_whatsapp(
@@ -319,4 +335,21 @@ def registrar_whatsapp(request, pk):
         )
         return redirect("gestion:comunicador_lista")
     _advertir_cierre_automatico(request, gestion)
+    if es_fragmento:
+        return render(
+            request,
+            "gestion/_detalle_comunicador.html",
+            {
+                "perfil": perfil,
+                "gestion": gestion,
+                "form": AccionComunicadorForm(),
+                "form_whatsapp": WhatsappComunicadorForm(
+                    initial={"cuerpo": form.cleaned_data["cuerpo"]},
+                    gestion=gestion,
+                ),
+                "puede_escribir": True,
+                "es_fragmento": True,
+                "whatsapp_url": url,
+            },
+        )
     return HttpResponseRedirect(url)

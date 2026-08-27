@@ -138,6 +138,48 @@
     }
   }
 
+  async function submitWhatsappForm(form, submitter) {
+    if (dialogRequestInFlight) return;
+    const popup = window.open("", "_blank", "noopener");
+    dialogRequestInFlight = true;
+    setDialogButtonsDisabled(true);
+    const data = new FormData(form);
+    if (submitter && submitter.name) data.set(submitter.name, submitter.value);
+    try {
+      const response = await fetch(form.action, {
+        method: "POST",
+        body: data,
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!response.ok) throw new Error("No se pudo guardar.");
+      const html = await response.text();
+      const replaced = replaceDialogWithFragment(response, html);
+      const url = dialog.querySelector("[data-whatsapp-url]")?.dataset.whatsappUrl;
+      if (url && popup) {
+        popup.location.href = url;
+      } else if (url) {
+        mostrarEnlaceWhatsapp(url);
+      } else if (popup) {
+        popup.close();
+      }
+      if (replaced) dialogActionsCount += 1;
+    } finally {
+      dialogRequestInFlight = false;
+    }
+  }
+
+  function mostrarEnlaceWhatsapp(url) {
+    let status = dialog.querySelector("[data-dialog-status]");
+    if (!status) {
+      status = document.createElement("p");
+      status.className = "warning-text";
+      status.setAttribute("role", "alert");
+      status.setAttribute("data-dialog-status", "");
+      dialog.querySelector(".modal-header")?.after(status);
+    }
+    status.innerHTML = `<a href="${url}" target="_blank" rel="noopener">Abrir WhatsApp</a>`;
+  }
+
   function bindDialog() {
     dialog.querySelectorAll("[data-dialog-close]").forEach((button) => {
       button.addEventListener("click", closeDialog);
@@ -146,6 +188,15 @@
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         submitFragmentForm(form, event.submitter).catch(() => {
+          setDialogButtonsDisabled(false);
+          mostrarErrorDeEnvio();
+        });
+      });
+    });
+    dialog.querySelectorAll("[data-whatsapp-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitWhatsappForm(form, event.submitter).catch(() => {
           setDialogButtonsDisabled(false);
           mostrarErrorDeEnvio();
         });

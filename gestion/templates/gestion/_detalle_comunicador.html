@@ -1,5 +1,5 @@
 {% load gestion_ui %}
-<article class="modal-panel" data-fragment-kind="comunicador-detail" data-current-row-id="{{ gestion.pk }}">
+<article class="modal-panel" data-fragment-kind="comunicador-detail" data-current-row-id="{{ gestion.pk }}"{% if whatsapp_url %} data-whatsapp-url="{{ whatsapp_url }}"{% endif %}>
   <header class="modal-header">
     <div>
       <h2 data-dialog-focus tabindex="-1">{{ gestion.solicitud.nombre }}</h2>
@@ -38,9 +38,17 @@
       </dl>
     </section>
     <section>
-      <h3>Vista previa de WhatsApp</h3>
+      <h3>Mensaje de WhatsApp</h3>
       {% if gestion|telefono_whatsapp_valido %}
-        <p class="message-preview">{{ gestion|mensaje_whatsapp_previo }}</p>
+        <div class="message-preview">
+          <p>Hola, {{ gestion.solicitud.nombre }}. Somos del {{ gestion.solicitud.centro_salud }}.</p>
+          {% if puede_escribir %}
+            <p class="muted">El cuerpo se puede editar antes de abrir WhatsApp.</p>
+          {% else %}
+            <p>{{ gestion|mensaje_whatsapp_previo }}</p>
+          {% endif %}
+          <p>Muchas gracias.</p>
+        </div>
       {% else %}
         <p class="danger-text">Telefono invalido para WhatsApp</p>
       {% endif %}
@@ -74,8 +82,13 @@
           No se logro contactar
         </button>
       </form>
-      <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}" data-whatsapp-form>
+      <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-whatsapp-form>
         {% csrf_token %}
+        <label class="whatsapp-editor">
+          <span>Cuerpo del mensaje</span>
+          {{ form_whatsapp.cuerpo }}
+        </label>
+        {% if form_whatsapp.cuerpo.errors %}<div data-dialog-error-focus tabindex="-1">{{ form_whatsapp.cuerpo.errors }}</div>{% endif %}
         {{ form_whatsapp.token_contacto }}
         <button class="btn--whatsapp" type="submit" {% if not gestion|telefono_whatsapp_valido %}disabled{% endif %}>
           <svg class="icon" aria-hidden="true"><use href="#ic-whatsapp"></use></svg>

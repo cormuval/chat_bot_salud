@@ -259,6 +259,21 @@ button:disabled {
   border-radius: 8px;
   background: #f8fafc;
 }
+.whatsapp-editor {
+  display: grid;
+  gap: var(--space-2);
+  width: min(100%, 42rem);
+}
+
+.whatsapp-editor span {
+  font-weight: 800;
+}
+
+.whatsapp-editor textarea {
+  width: 100%;
+  min-height: 8rem;
+  resize: vertical;
+}
 @media (max-width: 900px) {
   .modal-actions {
     align-items: stretch;

@@ -1309,7 +1309,7 @@ class ComunicadorViewsTests(TestCase):
 
         self.client.post(
             f"{detalle}whatsapp/",
-            {"token_contacto": token_whatsapp},
+            {"token_contacto": token_whatsapp, "cuerpo": "Mensaje de prueba."},
             HTTP_HOST="gestion.localhost",
         )
         self.client.post(
@@ -1338,7 +1338,7 @@ class ComunicadorViewsTests(TestCase):
         )
         self.client.post(
             f"{detalle}whatsapp/",
-            {"token_contacto": token_whatsapp},
+            {"token_contacto": token_whatsapp, "cuerpo": "Mensaje de prueba."},
             HTTP_HOST="gestion.localhost",
         )
 
@@ -1433,7 +1433,11 @@ class ComunicadorViewsTests(TestCase):
     def test_whatsapp_registra_intento_y_redirige_a_wa_me(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         gestion.rechazar(self.usuario, self.motivo)
-        response = self.client.post(f"/comunicador/{gestion.pk}/whatsapp/", HTTP_HOST="gestion.localhost")
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/whatsapp/",
+            {"cuerpo": "Mensaje de prueba."},
+            HTTP_HOST="gestion.localhost",
+        )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith("https://wa.me/"))
         gestion.refresh_from_db()
@@ -1455,7 +1459,10 @@ class ComunicadorViewsTests(TestCase):
         ):
             response = self.client.post(
                 f"/comunicador/{gestion.pk}/whatsapp/",
-                {"token_contacto": "token-whatsapp-obsoleto"},
+                {
+                    "token_contacto": "token-whatsapp-obsoleto",
+                    "cuerpo": "Mensaje de prueba.",
+                },
                 HTTP_HOST="gestion.localhost",
             )
 
@@ -1558,7 +1565,7 @@ class ComunicadorViewsTests(TestCase):
             f"/comunicador/{gestion.pk}/?fragmento=1",
             HTTP_HOST="gestion.localhost",
         )
-        self.assertContains(response, "Vista previa de WhatsApp")
+        self.assertContains(response, "Mensaje de WhatsApp")
         self.assertContains(response, "Ana Perez")
 
     def test_fragmento_comunicador_invalido_deshabilita_whatsapp(self):
@@ -1603,6 +1610,60 @@ class ComunicadorViewsTests(TestCase):
         self.assertContains(response, "Debe indicar fecha y hora acordadas")
         self.assertContains(response, '<details class="agenda-box" open>', html=False)
         self.assertContains(response, 'data-dialog-error-focus', html=False)
+
+    def test_fragmento_comunicador_whatsapp_tiene_partes_fijas_fuera_del_textarea(self):
+        PlantillaWhatsapp.objects.update_or_create(
+            clave="aceptada",
+            defaults={
+                "descripcion": "Aceptada",
+                "cuerpo": "Cuerpo editable.",
+            },
+        )
+        gestion = crear_solicitud_base(centro_salud=self.centro, nombre="Ana Perez").gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Hola, Ana Perez. Somos del")
+        self.assertContains(response, "Muchas gracias.")
+        self.assertContains(response, 'name="cuerpo"', html=False)
+        textarea_start = response.content.decode("utf-8").index('name="cuerpo"')
+        textarea_chunk = response.content.decode("utf-8")[textarea_start:textarea_start + 300]
+        self.assertNotIn("Ana Perez", textarea_chunk)
+        self.assertIn("Cuerpo editable.", textarea_chunk)
+
+    def test_whatsapp_fragmentado_devuelve_modal_con_url_y_registra_cuerpo_editado(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, nombre="Ana Perez").gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        token = response.context["form_whatsapp"]["token_contacto"].value()
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/whatsapp/?fragmento=1",
+            {"token_contacto": token, "cuerpo": "Mensaje editado por comunicador."},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="comunicador-detail"', html=False)
+        self.assertContains(response, "data-whatsapp-url=", html=False)
+        self.assertContains(response, "Mensaje editado por comunicador.")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+
+    def test_whatsapp_fragmentado_rechaza_cuerpo_vacio_sin_registrar_intento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/whatsapp/?fragmento=1",
+            {"token_contacto": "token-vacio", "cuerpo": "   "},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Debe escribir el cuerpo del mensaje.")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 0)
 
 
 class CerrarRechazadosCommandTests(TestCase):
