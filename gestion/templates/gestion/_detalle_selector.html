@@ -1,6 +1,6 @@
 {% load gestion_ui %}
-<article class="modal-panel" data-fragment-kind="selector-detail" data-current-row-id="{{ gestion.pk }}" data-selector-source-section="{{ seccion_origen }}" data-selector-destination-section="{{ seccion_destino }}" data-selector-row-action="{{ accion_fila }}" data-selector-correction-text="{{ texto_correccion_fila }}">
-  {% if mensaje_resultado %}<p class="status-badge">{{ mensaje_resultado }}</p>{% endif %}
+<article class="modal-panel" data-fragment-kind="selector-detail" data-current-row-id="{{ gestion.pk }}">
+  {% if mensaje_resultado %}<p class="status-badge">{{ mensaje_resultado }}{% if seccion_origen == "decididas" %} ({{ texto_correccion_fila }}){% endif %}</p>{% endif %}
   <header class="modal-header">
     <div>
       <h2 data-dialog-focus tabindex="-1">{{ gestion.solicitud.nombre }}</h2>

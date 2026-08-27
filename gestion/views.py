@@ -105,19 +105,18 @@ def selector_lista(request):
     else:
         seccion = "pendientes"
         gestiones = Gestion.objects.cola_selector(perfil)
-    return render(
-        request,
-        "gestion/selector_lista.html",
-        {
-            "perfil": perfil,
-            "gestiones": gestiones,
-            "puede_escribir": puede_escribir_selector(perfil),
-            "seccion": seccion,
-            "mostrar_no_aplica": mostrar_no_aplica,
-            "conteos_selector": conteos_selector,
-            "mostrar_columna_centro": mostrar_columna_centro,
-        },
-    )
+    context = {
+        "perfil": perfil,
+        "gestiones": gestiones,
+        "puede_escribir": puede_escribir_selector(perfil),
+        "seccion": seccion,
+        "mostrar_no_aplica": mostrar_no_aplica,
+        "conteos_selector": conteos_selector,
+        "mostrar_columna_centro": mostrar_columna_centro,
+    }
+    if request.GET.get("fragmento") == "1":
+        return render(request, "gestion/_tabla_selector.html", context)
+    return render(request, "gestion/selector_lista.html", context)
 
 
 @login_required

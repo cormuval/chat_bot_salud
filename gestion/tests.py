@@ -1091,46 +1091,35 @@ class SelectorViewsTests(TestCase):
         self.assertContains(response, f'data-current-row-id="{segundo.pk}"', html=False)
         self.assertContains(response, "Aceptada como Alta")
 
-    def test_post_fragmento_selector_desde_pendientes_expone_transicion_de_contadores(self):
-        primero = crear_solicitud_base(
-            centro_salud=self.centro,
-            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
-        ).gestion
-        crear_solicitud_base(
-            centro_salud=self.centro,
-            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+    def test_selector_lista_fragmento_devuelve_solo_region_refrescable(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            "/selector/?fragmento=1&seccion=pendientes",
+            HTTP_HOST="gestion.localhost",
         )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-table"', html=False)
+        self.assertContains(response, f'data-row-id="{gestion.pk}"', html=False)
+        self.assertNotContains(response, "<html", html=False)
 
+    def test_post_fragmento_selector_no_expone_transicion_incremental(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         response = self.client.post(
-            f"/selector/{primero.pk}/?fragmento=1&seccion=pendientes",
+            f"/selector/{gestion.pk}/?fragmento=1&seccion=pendientes",
             {
                 "decision": Gestion.Decision.ACEPTADA,
                 "prioridad_clinica": Solicitud.Prioridad.ALTA,
             },
             HTTP_HOST="gestion.localhost",
         )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-empty"', html=False)
+        self.assertNotContains(response, "data-selector-row-action", html=False)
+        self.assertNotContains(response, "data-selector-correction-text", html=False)
 
-        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
-        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
-        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
-
-    def test_post_fragmento_selector_no_aplica_expone_transicion_de_contadores(self):
-        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
-
-        response = self.client.post(
-            f"/selector/{gestion.pk}/?fragmento=1&seccion=pendientes",
-            {"decision": Gestion.Decision.NO_APLICA},
-            HTTP_HOST="gestion.localhost",
-        )
-
-        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
-        self.assertContains(response, 'data-selector-destination-section="no_aplica"', html=False)
-        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
-
-    def test_post_fragmento_selector_desde_decididas_conserva_caso_corregible(self):
+    def test_post_fragmento_selector_desde_decididas_sigue_mostrando_caso_corregible(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
-
         response = self.client.post(
             f"/selector/{gestion.pk}/?fragmento=1&seccion=decididas",
             {
@@ -1141,10 +1130,8 @@ class SelectorViewsTests(TestCase):
         )
 
         self.assertContains(response, f'data-current-row-id="{gestion.pk}"', html=False)
-        self.assertContains(response, 'data-selector-source-section="decididas"', html=False)
-        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
-        self.assertContains(response, 'data-selector-row-action="keep"', html=False)
-        self.assertContains(response, 'data-selector-correction-text="quedan', html=False)
+        self.assertNotContains(response, "data-selector-row-action", html=False)
+        self.assertContains(response, "quedan", html=False)
 
     def test_post_sin_fragmento_selector_redirige_a_seccion_de_origen(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1904,23 +1891,20 @@ class GestionAccesibilidadMarkupTests(TestCase):
         )
         self.assertContains(response, '<details class="agenda-box">', html=False)
 
-    def test_js_de_fragmentos_no_reenvia_formularios_y_actualiza_contadores(self):
+    def test_js_de_fragmentos_no_reenvia_formularios_y_refresca_tabla_al_cerrar(self):
         javascript = (
             Path(__file__).resolve().parent.parent / "static" / "js" / "gestion.js"
         ).read_text()
         self.assertNotIn("form.submit()", javascript)
-        self.assertIn("data-selector-counter", javascript)
-        self.assertIn("data-selector-correction", javascript)
+        self.assertNotIn("data-selector-counter", javascript)
+        self.assertNotIn("data-selector-correction", javascript)
+        self.assertIn("dialogActionsCount", javascript)
+        self.assertIn("refreshSelectorTable", javascript)
+        self.assertIn("data-selector-table-region", javascript)
+        self.assertIn("response.redirected", javascript)
+        self.assertIn("data-fragment-kind", javascript)
         self.assertIn("dialogRequestInFlight", javascript)
         self.assertIn("setDialogButtonsDisabled", javascript)
-        self.assertIn("data-dialog-focus", javascript)
-        self.assertIn("data-dialog-error-focus", javascript)
-        self.assertIn("No se pudo guardar. Intente nuevamente.", javascript)
-        submit_fragment = javascript[javascript.index("async function submitFragmentForm") :]
-        self.assertLess(
-            submit_fragment.index("const previousId = dialog"),
-            submit_fragment.index("const response = await fetch"),
-        )
 
     def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
         vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"

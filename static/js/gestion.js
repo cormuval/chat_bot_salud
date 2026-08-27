@@ -10,17 +10,67 @@
 
   let lastTrigger = null;
   let dialogRequestInFlight = false;
+  let dialogActionsCount = 0;
 
-  function closeDialog() {
-    dialog.close();
-    dialog.innerHTML = "";
-    if (lastTrigger) lastTrigger.focus();
+  function currentSelectorSection() {
+    return document.querySelector("[data-selector-table-region]")?.dataset.selectorSection || "pendientes";
   }
 
-  function removeResolvedRow(currentId) {
-    if (!currentId) return;
-    const row = document.querySelector(`[data-row-id="${currentId}"]`);
-    if (row) row.remove();
+  function selectorFragmentUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("fragmento", "1");
+    url.searchParams.set("seccion", currentSelectorSection());
+    return url.toString();
+  }
+
+  async function refreshSelectorTable() {
+    const region = document.querySelector("[data-selector-table-region]");
+    if (!region) return;
+    const response = await fetch(selectorFragmentUrl(), {
+      headers: { "X-Requested-With": "fetch" },
+    });
+    const html = await response.text();
+    const fragment = extractFragmentOrNavigate(response, html);
+    if (!fragment) return;
+    if (fragment.dataset.fragmentKind !== "selector-table") return;
+    region.replaceWith(fragment);
+    document.querySelector("[data-gestion-list]")?.scrollIntoView({ block: "start" });
+  }
+
+  function extractFragmentOrNavigate(response, html) {
+    if (response.redirected) {
+      window.location.href = response.url;
+      return null;
+    }
+    const template = document.createElement("template");
+    template.innerHTML = html.trim();
+    const fragment = template.content.querySelector("[data-fragment-kind]");
+    if (!fragment) {
+      window.location.href = response.url || window.location.href;
+      return null;
+    }
+    return fragment;
+  }
+
+  function replaceDialogWithFragment(response, html) {
+    const fragment = extractFragmentOrNavigate(response, html);
+    if (!fragment) return false;
+    dialog.replaceChildren(fragment);
+    bindDialog();
+    if (!dialog.open) dialog.showModal();
+    focusDialogContent();
+    return true;
+  }
+
+  function closeDialog() {
+    const shouldRefreshSelector = dialogActionsCount > 0 && document.querySelector("[data-selector-table-region]");
+    dialog.close();
+    dialog.innerHTML = "";
+    dialogActionsCount = 0;
+    if (lastTrigger) lastTrigger.focus();
+    if (shouldRefreshSelector) {
+      refreshSelectorTable().catch(() => window.location.reload());
+    }
   }
 
   function focusDialogContent() {
@@ -50,47 +100,15 @@
     status.focus();
   }
 
-  function ajustarContadorSelector(seccion, diferencia) {
-    if (!seccion || !diferencia) return;
-    const counter = document.querySelector(`[data-selector-counter="${seccion}"]`);
-    if (!counter) return;
-    const actual = Number.parseInt(counter.textContent, 10);
-    if (Number.isFinite(actual)) {
-      counter.textContent = String(Math.max(0, actual + diferencia));
-    }
-  }
-
-  function actualizarContadoresSelector(fragmentRoot) {
-    const origen = fragmentRoot?.dataset.selectorSourceSection;
-    const destino = fragmentRoot?.dataset.selectorDestinationSection;
-    if (!origen || !destino) return;
-    ajustarContadorSelector(origen, -1);
-    if (destino !== origen) ajustarContadorSelector(destino, 1);
-  }
-
-  function actualizarFilaConservada(currentId, fragmentRoot) {
-    if (!currentId) return;
-    const row = document.querySelector(`[data-row-id="${currentId}"]`);
-    const correction = row?.querySelector("[data-selector-correction]");
-    if (!correction || !fragmentRoot?.dataset.selectorCorrectionText) return;
-    correction.textContent = fragmentRoot.dataset.selectorCorrectionText;
-  }
-
   async function loadFragment(url) {
     const response = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
     if (!response.ok) throw new Error("No se pudo cargar el detalle.");
-    dialog.innerHTML = await response.text();
-    bindDialog();
-    if (!dialog.open) dialog.showModal();
-    focusDialogContent();
+    replaceDialogWithFragment(response, await response.text());
   }
 
   async function submitFragmentForm(form, submitter) {
     if (dialogRequestInFlight) return;
     dialogRequestInFlight = true;
-    const previousId = dialog
-      .querySelector("[data-current-row-id]")
-      ?.getAttribute("data-current-row-id");
     setDialogButtonsDisabled(true);
     const data = new FormData(form);
     if (submitter && submitter.name) data.set(submitter.name, submitter.value);
@@ -104,18 +122,10 @@
       if (!response.ok) {
         throw new Error("No se pudo guardar.");
       }
-      dialog.innerHTML = await response.text();
-      const confirmation = dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]');
-      if (confirmation?.dataset.caseResolved === "true" && previousId) removeResolvedRow(previousId);
-      const fragmentRoot = dialog.querySelector("[data-fragment-kind]");
-      if (fragmentRoot?.dataset.selectorRowAction === "remove") {
-        removeResolvedRow(previousId);
-        actualizarContadoresSelector(fragmentRoot);
-      } else if (fragmentRoot?.dataset.selectorRowAction === "keep") {
-        actualizarFilaConservada(previousId, fragmentRoot);
+      const html = await response.text();
+      if (replaceDialogWithFragment(response, html)) {
+        dialogActionsCount += 1;
       }
-      bindDialog();
-      focusDialogContent();
     } finally {
       dialogRequestInFlight = false;
     }

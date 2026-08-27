@@ -1,5 +1,4 @@
 {% extends "gestion/base.html" %}
-{% load gestion_ui %}
 {% block title %}Cola del selector{% endblock %}
 {% block body_attrs %}data-gestion-page="selector"{% endblock %}
 {% block content %}
@@ -10,59 +9,5 @@
   </div>
 </section>
 
-<nav class="gestion-nav" aria-label="Secciones del selector">
-  <a class="tab-link" href="{% url 'gestion:selector_lista' %}">Pendientes <strong data-selector-counter="pendientes">{{ conteos_selector.pendientes }}</strong></a>
-  <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles <strong data-selector-counter="decididas">{{ conteos_selector.decididas }}</strong></a>
-  {% if mostrar_no_aplica %}
-    <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica <strong data-selector-counter="no_aplica">{{ conteos_selector.no_aplica }}</strong></a>
-  {% endif %}
-</nav>
-
-<table class="data-table" data-gestion-list>
-  <thead>
-    <tr>
-      <th>Paciente</th>
-      {% if mostrar_columna_centro %}<th>Centro</th>{% endif %}
-      <th>Prioridad administrativa</th>
-      <th>Motivo</th>
-      <th>Fecha</th>
-      {% if seccion == "decididas" %}<th>Correccion</th>{% endif %}
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for gestion in gestiones %}
-      <tr class="row-link" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:selector_detalle' gestion.pk %}?fragmento=1&amp;seccion={{ seccion }}">
-        <td data-label="Paciente">{{ gestion.solicitud.nombre }}</td>
-        {% if mostrar_columna_centro %}<td data-label="Centro">{{ gestion.solicitud.centro_salud }}</td>{% endif %}
-        <td data-label="Prioridad administrativa">
-          <span class="priority-badge {{ gestion.solicitud.priorizacion_solicitud|prioridad_css }}" tabindex="0" aria-describedby="prioridad-{{ gestion.pk }}">
-            {{ gestion.solicitud.get_priorizacion_solicitud_display }} ({{ gestion.solicitud.puntaje_prioridad }} pts)
-          </span>
-          <span id="prioridad-{{ gestion.pk }}" class="prioridad-detalle" role="tooltip">
-            {% for factor in gestion.solicitud|desglose_prioridad %}
-              <span>{{ factor.descripcion }} +{{ factor.puntaje }}</span>
-            {% empty %}
-              <span>sin factores de prioridad +0</span>
-            {% endfor %}
-          </span>
-        </td>
-        <td data-label="Motivo"><span class="truncate">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
-        <td data-label="Fecha"><time title="{{ gestion.solicitud.date_solicitud }}">{{ gestion.solicitud.date_solicitud|tiempo_relativo }}</time></td>
-        {% if seccion == "decididas" %}
-          <td data-label="Correccion" data-selector-correction>
-            {% if gestion.decision == "RECHAZADA" %}
-              <span class="warning-text">{{ gestion|horas_restantes_rechazo }}</span>
-            {% else %}
-              Sin intentos registrados
-            {% endif %}
-          </td>
-        {% endif %}
-        <td data-label="Abrir"><a href="{% url 'gestion:selector_detalle' gestion.pk %}?seccion={{ seccion }}">Abrir</a></td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="{% if mostrar_columna_centro %}{% if seccion == "decididas" %}7{% else %}6{% endif %}{% else %}{% if seccion == "decididas" %}6{% else %}5{% endif %}{% endif %}"><div class="empty-state">No hay solicitudes en esta seccion.</div></td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% include "gestion/_tabla_selector.html" %}
 {% endblock %}
