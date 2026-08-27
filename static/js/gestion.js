@@ -63,14 +63,7 @@
   }
 
   function closeDialog() {
-    const shouldRefreshSelector = dialogActionsCount > 0 && document.querySelector("[data-selector-table-region]");
     dialog.close();
-    dialog.innerHTML = "";
-    dialogActionsCount = 0;
-    if (lastTrigger) lastTrigger.focus();
-    if (shouldRefreshSelector) {
-      refreshSelectorTable().catch(() => window.location.reload());
-    }
   }
 
   function focusDialogContent() {
@@ -162,6 +155,12 @@
   });
 
   dialog.addEventListener("close", () => {
+    const shouldRefreshSelector = dialogActionsCount > 0 && document.querySelector("[data-selector-table-region]");
+    dialog.innerHTML = "";
+    dialogActionsCount = 0;
     if (lastTrigger) lastTrigger.focus();
+    if (shouldRefreshSelector) {
+      refreshSelectorTable().catch(() => window.location.reload());
+    }
   });
 })();

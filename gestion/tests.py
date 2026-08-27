@@ -1905,6 +1905,9 @@ class GestionAccesibilidadMarkupTests(TestCase):
         self.assertIn("data-fragment-kind", javascript)
         self.assertIn("dialogRequestInFlight", javascript)
         self.assertIn("setDialogButtonsDisabled", javascript)
+        cierre_dialogo = javascript[javascript.index('dialog.addEventListener("close"') :]
+        self.assertIn("dialogActionsCount > 0", cierre_dialogo)
+        self.assertIn("refreshSelectorTable", cierre_dialogo)
 
     def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
         vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"
