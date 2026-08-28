@@ -1969,6 +1969,19 @@ class GestionBaseLayoutTests(TestCase):
         self.assertContains(response, "Cerrar sesion")
 
 
+class GestionDocsTests(TestCase):
+    def test_nota_despliegue_mejoras_ui_documenta_riesgos_operativos(self):
+        path = (
+            Path(__file__).resolve().parent.parent
+            / "docs"
+            / "despliegue-mejoras-ui-seleccion.md"
+        )
+        contenido = path.read_text(encoding="utf-8")
+        self.assertIn("Motivos de rechazo no transformados", contenido)
+        self.assertIn("Historial no reconstruible", contenido)
+        self.assertIn("Bloqueador de popups", contenido)
+
+
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
 class GestionListasUiTests(TestCase):
     def setUp(self):
