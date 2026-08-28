@@ -37,6 +37,35 @@
         <dt>Motivo de cierre</dt><dd>{{ gestion.get_motivo_cierre_display|default:"Abierto" }}</dd>
       </dl>
     </section>
+    <details class="contact-history" open>
+      <summary>Historial de comunicaciones ({{ registros_contacto|length }})</summary>
+      {% if registros_contacto %}
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Canal</th>
+              <th>Resultado</th>
+              <th>Usuario</th>
+              <th>Mensaje</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for registro in registros_contacto %}
+              <tr>
+                <td><time title="{{ registro.creado_en }}">{{ registro.creado_en|date:"d/m H:i" }}</time></td>
+                <td>{{ registro.get_canal_display }}</td>
+                <td>{{ registro.get_resultado_display }}</td>
+                <td>{% if registro.usuario %}{{ registro.usuario.email|default:registro.usuario.username }}{% else %}Sin usuario{% endif %}</td>
+                <td>{% if registro.mensaje %}<span class="history-message">{{ registro.mensaje }}</span>{% else %}-{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">Sin comunicaciones registradas.</p>
+      {% endif %}
+    </details>
     <section>
       <h3>Mensaje de WhatsApp</h3>
       {% if gestion|telefono_whatsapp_valido %}

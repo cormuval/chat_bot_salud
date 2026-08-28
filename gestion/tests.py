@@ -1708,6 +1708,42 @@ class ComunicadorViewsTests(TestCase):
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 0)
 
+    def test_fragmento_comunicador_muestra_bitacora_de_comunicaciones(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="llamada-1")
+        gestion.registrar_click_whatsapp(
+            self.usuario,
+            token_contacto="wsp-1",
+            mensaje="Hola, paciente. Mensaje enviado.",
+        )
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Historial de comunicaciones (2)")
+        self.assertContains(response, "Llamada telefonica")
+        self.assertContains(response, "WhatsApp")
+        self.assertContains(response, "Mensaje enviado.")
+        self.assertContains(response, self.usuario.email or self.usuario.username)
+
+    def test_historial_visible_para_solo_lectura(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="solo-lectura")
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Historial de comunicaciones (1)")
+        self.assertContains(response, "Vista de solo lectura")
+
 
 class RegistroContactoBackfillMigrationTests(TransactionTestCase):
     serialized_rollback = True

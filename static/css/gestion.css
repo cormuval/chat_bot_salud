@@ -274,6 +274,37 @@ button:disabled {
   min-height: 8rem;
   resize: vertical;
 }
+.contact-history {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+}
+
+.contact-history summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.history-table {
+  width: 100%;
+  margin-top: var(--space-3);
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.history-message {
+  display: inline-block;
+  max-width: 28rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @media (max-width: 900px) {
   .modal-actions {
     align-items: stretch;

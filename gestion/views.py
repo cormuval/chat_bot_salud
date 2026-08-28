@@ -68,6 +68,35 @@ def _texto_correccion_selector(gestion):
     return "Sin intentos registrados"
 
 
+def _registros_contacto(gestion):
+    return list(
+        gestion.registros_contacto.select_related("usuario").order_by(
+            "-creado_en", "-pk"
+        )
+    )
+
+
+def _contexto_detalle_comunicador(
+    perfil,
+    gestion,
+    form,
+    form_whatsapp,
+    puede_escribir,
+    es_fragmento,
+    whatsapp_url="",
+):
+    return {
+        "perfil": perfil,
+        "gestion": gestion,
+        "form": form,
+        "form_whatsapp": form_whatsapp,
+        "puede_escribir": puede_escribir,
+        "es_fragmento": es_fragmento,
+        "whatsapp_url": whatsapp_url,
+        "registros_contacto": _registros_contacto(gestion),
+    }
+
+
 @login_required
 def panel(request):
     perfil = obtener_perfil_activo(request.user)
@@ -282,14 +311,14 @@ def comunicador_detalle(request, pk):
     return render(
         request,
         template,
-        {
-            "perfil": perfil,
-            "gestion": gestion,
-            "form": form,
-            "form_whatsapp": form_whatsapp,
-            "puede_escribir": puede_escribir,
-            "es_fragmento": es_fragmento,
-        },
+        _contexto_detalle_comunicador(
+            perfil,
+            gestion,
+            form,
+            form_whatsapp,
+            puede_escribir,
+            es_fragmento,
+        ),
     )
 
 
@@ -307,15 +336,14 @@ def registrar_whatsapp(request, pk):
             return render(
                 request,
                 "gestion/_detalle_comunicador.html",
-                {
-                    "perfil": perfil,
-                    "gestion": gestion,
-                    "form": AccionComunicadorForm(),
-                    "form_whatsapp": form,
-                    "puede_escribir": True,
-                    "es_fragmento": True,
-                    "whatsapp_url": "",
-                },
+                _contexto_detalle_comunicador(
+                    perfil,
+                    gestion,
+                    AccionComunicadorForm(),
+                    form,
+                    True,
+                    True,
+                ),
             )
         messages.error(request, "El formulario de WhatsApp no es valido.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
@@ -341,17 +369,17 @@ def registrar_whatsapp(request, pk):
         return render(
             request,
             "gestion/_detalle_comunicador.html",
-            {
-                "perfil": perfil,
-                "gestion": gestion,
-                "form": AccionComunicadorForm(),
-                "form_whatsapp": WhatsappComunicadorForm(
+            _contexto_detalle_comunicador(
+                perfil,
+                gestion,
+                AccionComunicadorForm(),
+                WhatsappComunicadorForm(
                     initial={"cuerpo": form.cleaned_data["cuerpo"]},
                     gestion=gestion,
                 ),
-                "puede_escribir": True,
-                "es_fragmento": True,
-                "whatsapp_url": url,
-            },
+                True,
+                True,
+                whatsapp_url=url,
+            ),
         )
     return HttpResponseRedirect(url)
