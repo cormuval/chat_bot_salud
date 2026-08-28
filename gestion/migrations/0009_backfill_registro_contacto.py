@@ -12,24 +12,28 @@ def canal_para_accion(accion):
 def forwards(apps, schema_editor):
     TokenContactoGestion = apps.get_model("gestion", "TokenContactoGestion")
     RegistroContacto = apps.get_model("gestion", "RegistroContacto")
-    registros = []
     for token in TokenContactoGestion.objects.all().order_by("creado_en", "pk"):
-        registros.append(
-            RegistroContacto(
-                gestion_id=token.gestion_id,
-                canal=canal_para_accion(token.accion),
-                resultado=token.accion,
-                mensaje="",
-                usuario_id=None,
-                creado_en=token.creado_en,
-            )
+        registro = RegistroContacto.objects.create(
+            gestion_id=token.gestion_id,
+            canal=canal_para_accion(token.accion),
+            resultado=token.accion,
+            mensaje="",
+            usuario_id=None,
         )
-    RegistroContacto.objects.bulk_create(registros, batch_size=500)
+        RegistroContacto.objects.filter(pk=registro.pk).update(creado_en=token.creado_en)
 
 
 def backwards(apps, schema_editor):
+    TokenContactoGestion = apps.get_model("gestion", "TokenContactoGestion")
     RegistroContacto = apps.get_model("gestion", "RegistroContacto")
-    RegistroContacto.objects.filter(usuario__isnull=True, mensaje="").delete()
+    for token in TokenContactoGestion.objects.all().order_by("creado_en", "pk"):
+        RegistroContacto.objects.filter(
+            gestion_id=token.gestion_id,
+            resultado=token.accion,
+            usuario__isnull=True,
+            mensaje="",
+            creado_en=token.creado_en,
+        ).delete()
 
 
 class Migration(migrations.Migration):

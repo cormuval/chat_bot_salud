@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
 from django.http import Http404
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.template import Context, Template
@@ -1706,6 +1707,101 @@ class ComunicadorViewsTests(TestCase):
         self.assertContains(response, "Debe escribir el cuerpo del mensaje.")
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 0)
+
+
+class RegistroContactoBackfillMigrationTests(TransactionTestCase):
+    serialized_rollback = True
+
+    migrate_from = [("gestion", "0008_registro_contacto")]
+    migrate_to = [("gestion", "0009_backfill_registro_contacto")]
+
+    def setUp(self):
+        super().setUp()
+        self.executor = MigrationExecutor(connection)
+        self.executor.migrate(self.migrate_from)
+        self.apps = self.executor.loader.project_state(self.migrate_from).apps
+
+    def tearDown(self):
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        super().tearDown()
+
+    def _crear_gestion_con_token(self, token="token-backfill"):
+        User = self.apps.get_model("auth", "User")
+        Centro = self.apps.get_model("solicitudes", "Centro")
+        Solicitud = self.apps.get_model("solicitudes", "Solicitud")
+        GestionHistorica = self.apps.get_model("gestion", "Gestion")
+        TokenContactoGestion = self.apps.get_model("gestion", "TokenContactoGestion")
+
+        usuario = User.objects.create_user("migracion-backfill")
+        solicitud = Solicitud.objects.create(
+            nombre="Ana Maria Perez",
+            rut="25747311-2",
+            edad=34,
+            sexo="N",
+            telefono="+56949106239",
+            centro_salud=Centro.objects.get(pk=620),
+            acepta_terminos=True,
+            motivo="consulta medica",
+            detalle_motivo="dolor de garganta",
+            priorizacion_solicitud="BAJA",
+            puntaje_prioridad=0,
+        )
+        gestion = GestionHistorica.objects.create(
+            solicitud=solicitud,
+            decision="ACEPTADA",
+            prioridad_clinica="MEDIA",
+            decidido_por=usuario,
+            fecha_decision=timezone.now(),
+        )
+        contacto = TokenContactoGestion.objects.create(
+            gestion=gestion,
+            token=token,
+            accion="NO_CONTESTA",
+        )
+        return gestion, contacto
+
+    def test_backfill_conserva_fecha_original_del_token(self):
+        gestion, contacto = self._crear_gestion_con_token()
+        fecha_original = timezone.now() - timedelta(days=3, hours=2)
+        type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        RegistroContactoHistorico = apps.get_model("gestion", "RegistroContacto")
+
+        registro = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
+        self.assertEqual(registro.creado_en, fecha_original)
+
+    def test_reverse_backfill_no_borra_registros_sin_token_equivalente(self):
+        gestion, contacto = self._crear_gestion_con_token()
+        fecha_original = timezone.now() - timedelta(days=3)
+        type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        RegistroContactoHistorico = apps.get_model("gestion", "RegistroContacto")
+        registro_backfill = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
+        registro_legitimo = RegistroContactoHistorico.objects.create(
+            gestion_id=gestion.pk,
+            canal="LLAMADA",
+            resultado="NO_CONTESTA",
+            mensaje="",
+            usuario_id=None,
+        )
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_from)
+
+        ids_restantes = set(
+            RegistroContactoHistorico.objects.filter(gestion_id=gestion.pk).values_list(
+                "pk", flat=True
+            )
+        )
+        self.assertNotIn(registro_backfill.pk, ids_restantes)
+        self.assertIn(registro_legitimo.pk, ids_restantes)
 
 
 class CerrarRechazadosCommandTests(TestCase):
