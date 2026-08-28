@@ -1774,7 +1774,7 @@ class RegistroContactoBackfillMigrationTests(TransactionTestCase):
         registro = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
         self.assertEqual(registro.creado_en, fecha_original)
 
-    def test_reverse_backfill_no_borra_registros_sin_token_equivalente(self):
+    def test_reverse_backfill_no_borra_registros_ambiguos(self):
         gestion, contacto = self._crear_gestion_con_token()
         fecha_original = timezone.now() - timedelta(days=3)
         type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
@@ -1791,6 +1791,9 @@ class RegistroContactoBackfillMigrationTests(TransactionTestCase):
             mensaje="",
             usuario_id=None,
         )
+        RegistroContactoHistorico.objects.filter(pk=registro_legitimo.pk).update(
+            creado_en=fecha_original
+        )
 
         self.executor.loader.build_graph()
         self.executor.migrate(self.migrate_from)
@@ -1800,7 +1803,7 @@ class RegistroContactoBackfillMigrationTests(TransactionTestCase):
                 "pk", flat=True
             )
         )
-        self.assertNotIn(registro_backfill.pk, ids_restantes)
+        self.assertIn(registro_backfill.pk, ids_restantes)
         self.assertIn(registro_legitimo.pk, ids_restantes)
 
 

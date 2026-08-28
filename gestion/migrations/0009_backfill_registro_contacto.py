@@ -24,16 +24,10 @@ def forwards(apps, schema_editor):
 
 
 def backwards(apps, schema_editor):
-    TokenContactoGestion = apps.get_model("gestion", "TokenContactoGestion")
-    RegistroContacto = apps.get_model("gestion", "RegistroContacto")
-    for token in TokenContactoGestion.objects.all().order_by("creado_en", "pk"):
-        RegistroContacto.objects.filter(
-            gestion_id=token.gestion_id,
-            resultado=token.accion,
-            usuario__isnull=True,
-            mensaje="",
-            creado_en=token.creado_en,
-        ).delete()
+    # No hay una marca persistida que distinga un registro creado por backfill
+    # de una llamada real posterior con usuario eliminado. La reversa conserva
+    # los datos para evitar borrar historial legitimo.
+    return None
 
 
 class Migration(migrations.Migration):
