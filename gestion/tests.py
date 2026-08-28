@@ -14,7 +14,13 @@ from django.template import Context, Template
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
-from gestion.models import Gestion, MotivoRechazo, PerfilUsuario, PlantillaWhatsapp
+from gestion.models import (
+    Gestion,
+    MotivoRechazo,
+    PerfilUsuario,
+    PlantillaWhatsapp,
+    RegistroContacto,
+)
 from gestion.permisos import (
     gestion_alcanzable_o_404,
     puede_escribir_comunicador,
@@ -575,6 +581,36 @@ class GestionModeloTests(TestCase):
         self.assertEqual(gestion.intentos_contacto, 1)
         self.assertIsNotNone(gestion.fecha_ultimo_intento)
         self.assertIsNone(gestion.cerrada_en)
+
+    def test_registrar_no_contesta_crea_registro_contacto_de_llamada(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-llamada")
+        registro = gestion.registros_contacto.get()
+        self.assertEqual(registro.canal, RegistroContacto.Canal.LLAMADA)
+        self.assertEqual(registro.resultado, Gestion.AccionContacto.NO_CONTESTA)
+        self.assertEqual(registro.usuario, self.usuario)
+        self.assertEqual(registro.mensaje, "")
+
+    def test_registrar_whatsapp_crea_registro_con_mensaje(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_click_whatsapp(
+            self.usuario,
+            token_contacto="token-whatsapp",
+            mensaje="Mensaje enviado.",
+        )
+        registro = gestion.registros_contacto.get()
+        self.assertEqual(registro.canal, RegistroContacto.Canal.WHATSAPP)
+        self.assertEqual(registro.resultado, Gestion.AccionContacto.WHATSAPP)
+        self.assertEqual(registro.mensaje, "Mensaje enviado.")
+
+    def test_token_duplicado_no_duplica_historial(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-repetido")
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-repetido")
+        self.assertEqual(gestion.registros_contacto.count(), 1)
 
     def test_no_contesta_duplicado_no_suma_otro_intento(self):
         gestion = crear_solicitud_base().gestion
@@ -1652,6 +1688,12 @@ class ComunicadorViewsTests(TestCase):
         self.assertContains(response, "Mensaje editado por comunicador.")
         gestion.refresh_from_db()
         self.assertEqual(gestion.intentos_contacto, 1)
+        registro = gestion.registros_contacto.get()
+        self.assertEqual(
+            registro.mensaje,
+            "Hola, Ana Perez. Somos del Centro De Salud Familiar Rodelillo.\n"
+            "Mensaje editado por comunicador.\nMuchas gracias.",
+        )
 
     def test_whatsapp_fragmentado_rechaza_cuerpo_vacio_sin_registrar_intento(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion

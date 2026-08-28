@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
-from .mensajes import url_whatsapp_para_gestion
+from .mensajes import armar_mensaje_whatsapp, url_whatsapp_para_gestion
 from .models import Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
@@ -323,10 +323,12 @@ def registrar_whatsapp(request, pk):
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
+    mensaje = armar_mensaje_whatsapp(gestion, form.cleaned_data["cuerpo"])
     try:
         gestion.registrar_click_whatsapp(
             request.user,
             token_contacto=form.cleaned_data.get("token_contacto", ""),
+            mensaje=mensaje,
         )
     except ValidationError:
         messages.error(
