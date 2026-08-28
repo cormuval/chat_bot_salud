@@ -1996,6 +1996,10 @@ class GestionAccesibilidadMarkupTests(TestCase):
         self.assertIn("data-fragment-kind", javascript)
         self.assertIn("dialogRequestInFlight", javascript)
         self.assertIn("setDialogButtonsDisabled", javascript)
+        self.assertNotIn('window.open("", "_blank", "noopener")', javascript)
+        self.assertIn('window.open("", "_blank")', javascript)
+        self.assertIn("popup.opener = null", javascript)
+        self.assertIn("popup.location.href = url", javascript)
         cierre_dialogo = javascript[javascript.index('dialog.addEventListener("close"') :]
         self.assertIn("dialogActionsCount > 0", cierre_dialogo)
         self.assertIn("refreshSelectorTable", cierre_dialogo)

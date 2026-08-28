@@ -140,7 +140,8 @@
 
   async function submitWhatsappForm(form, submitter) {
     if (dialogRequestInFlight) return;
-    const popup = window.open("", "_blank", "noopener");
+    const popup = window.open("", "_blank");
+    if (popup) popup.opener = null;
     dialogRequestInFlight = true;
     setDialogButtonsDisabled(true);
     const data = new FormData(form);
