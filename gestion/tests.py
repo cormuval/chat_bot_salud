@@ -1930,6 +1930,29 @@ class RegistroContactoBackfillMigrationTests(TransactionTestCase):
         self.assertIn(registro_backfill.pk, ids_restantes)
         self.assertIn(registro_legitimo.pk, ids_restantes)
 
+    def test_reaplicar_backfill_no_duplica_registros_existentes(self):
+        gestion, contacto = self._crear_gestion_con_token()
+        fecha_original = timezone.now() - timedelta(days=2, hours=4)
+        type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        RegistroContactoHistorico = apps.get_model("gestion", "RegistroContacto")
+        registro_original = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_from)
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+
+        registros = list(
+            RegistroContactoHistorico.objects.filter(gestion_id=gestion.pk).order_by("pk")
+        )
+        self.assertEqual(len(registros), 1)
+        self.assertEqual(registros[0].pk, registro_original.pk)
+        self.assertEqual(registros[0].creado_en, fecha_original)
+
 
 class CerrarRechazadosCommandTests(TestCase):
     def setUp(self):

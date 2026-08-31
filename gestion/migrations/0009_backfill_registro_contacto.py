@@ -13,6 +13,15 @@ def forwards(apps, schema_editor):
     TokenContactoGestion = apps.get_model("gestion", "TokenContactoGestion")
     RegistroContacto = apps.get_model("gestion", "RegistroContacto")
     for token in TokenContactoGestion.objects.all().order_by("creado_en", "pk"):
+        if RegistroContacto.objects.filter(
+            gestion_id=token.gestion_id,
+            canal=canal_para_accion(token.accion),
+            resultado=token.accion,
+            mensaje="",
+            usuario_id=None,
+            creado_en=token.creado_en,
+        ).exists():
+            continue
         registro = RegistroContacto.objects.create(
             gestion_id=token.gestion_id,
             canal=canal_para_accion(token.accion),

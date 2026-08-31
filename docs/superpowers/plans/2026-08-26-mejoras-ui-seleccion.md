@@ -1887,13 +1887,13 @@ If there were no changes, do not create an empty commit.
 
 ## Self-Review
 
-**Spec coverage:**  
+**Spec coverage:**
 Bloque 1 is covered by Task 1. Bloque 2 is covered by Task 1. Bloque 3 is covered by Task 2. Bloque 4 is covered by Tasks 3 and 4. Bloque 5 is covered by Tasks 5 and 6. Consequences and deployment notes are covered by Task 7. Full verification is covered by Task 8.
 
-**Placeholder scan:**  
+**Placeholder scan:**
 The plan contains exact paths, commands, expected results and concrete code snippets. It does not use open-ended placeholder instructions.
 
-**Type consistency:**  
+**Type consistency:**
 `PlantillaWhatsapp.obtener_cuerpo_activo`, `armar_mensaje_whatsapp`, `url_whatsapp_para_gestion`, `Gestion.url_whatsapp(cuerpo=None)`, `RegistroContacto.Canal`, `registrar_click_whatsapp(..., mensaje="")`, `registros_contacto` and `whatsapp_url` are introduced before later tasks consume them.
 
 ## Execution Handoff
