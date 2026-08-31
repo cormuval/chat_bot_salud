@@ -1744,6 +1744,94 @@ class ComunicadorViewsTests(TestCase):
         self.assertContains(response, "Historial de comunicaciones (1)")
         self.assertContains(response, "Vista de solo lectura")
 
+    def test_whatsapp_solo_lectura_no_duplica_saludo_ni_cierre(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            nombre="Ana Perez",
+        ).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        contenido = response.content.decode("utf-8")
+        self.assertEqual(contenido.count("Hola, Ana Perez. Somos del"), 1)
+        self.assertEqual(contenido.count("Muchas gracias."), 1)
+        self.assertContains(response, "Estamos intentando comunicarnos")
+
+
+class PlantillaWhatsappMigrationTests(TransactionTestCase):
+    serialized_rollback = True
+
+    migrate_from = [("gestion", "0006_plantilla_whatsapp_y_help_text")]
+    migrate_to = [("gestion", "0007_seed_plantilla_whatsapp_y_limpia_motivos")]
+    migrate_latest = [("gestion", "0009_backfill_registro_contacto")]
+
+    def setUp(self):
+        super().setUp()
+        self.executor = MigrationExecutor(connection)
+        self.executor.migrate(self.migrate_from)
+        self.apps = self.executor.loader.project_state(self.migrate_from).apps
+
+    def tearDown(self):
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_latest)
+        super().tearDown()
+
+    def test_reverse_no_borra_plantilla_editada_ni_reescribe_motivos(self):
+        MotivoRechazoHistorico = self.apps.get_model("gestion", "MotivoRechazo")
+
+        con_saludo = MotivoRechazoHistorico.objects.create(
+            nombre="Con saludo",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        sin_saludo = MotivoRechazoHistorico.objects.create(
+            nombre="Sin saludo",
+            mensaje_paciente="Favor traer carnet.",
+        )
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        MotivoMigrado = apps.get_model("gestion", "MotivoRechazo")
+        PlantillaMigrada = apps.get_model("gestion", "PlantillaWhatsapp")
+
+        self.assertEqual(
+            MotivoMigrado.objects.get(pk=con_saludo.pk).mensaje_paciente,
+            "faltan datos.",
+        )
+        self.assertEqual(
+            MotivoMigrado.objects.get(pk=sin_saludo.pk).mensaje_paciente,
+            "Favor traer carnet.",
+        )
+        plantilla = PlantillaMigrada.objects.get(clave="aceptada")
+        PlantillaMigrada.objects.filter(pk=plantilla.pk).update(
+            cuerpo="Texto editado por admin."
+        )
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_from)
+        apps = self.executor.loader.project_state(self.migrate_from).apps
+        MotivoRevertido = apps.get_model("gestion", "MotivoRechazo")
+        PlantillaRevertida = apps.get_model("gestion", "PlantillaWhatsapp")
+
+        self.assertEqual(
+            PlantillaRevertida.objects.get(clave="aceptada").cuerpo,
+            "Texto editado por admin.",
+        )
+        self.assertEqual(
+            MotivoRevertido.objects.get(pk=con_saludo.pk).mensaje_paciente,
+            "faltan datos.",
+        )
+        self.assertEqual(
+            MotivoRevertido.objects.get(pk=sin_saludo.pk).mensaje_paciente,
+            "Favor traer carnet.",
+        )
+
 
 class RegistroContactoBackfillMigrationTests(TransactionTestCase):
     serialized_rollback = True

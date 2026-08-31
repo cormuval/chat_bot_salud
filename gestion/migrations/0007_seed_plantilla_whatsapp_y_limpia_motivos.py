@@ -30,13 +30,10 @@ def forwards(apps, schema_editor):
 
 
 def backwards(apps, schema_editor):
-    PlantillaWhatsapp = apps.get_model("gestion", "PlantillaWhatsapp")
-    MotivoRechazo = apps.get_model("gestion", "MotivoRechazo")
-    PlantillaWhatsapp.objects.filter(clave="aceptada").delete()
-    for motivo in MotivoRechazo.objects.all():
-        if not PATRON_SALUDO.match(motivo.mensaje_paciente):
-            motivo.mensaje_paciente = f"Hola {{nombre}}, {motivo.mensaje_paciente}"
-            motivo.save(update_fields=["mensaje_paciente"])
+    # No hay un respaldo exacto de los textos originales ni una marca que distinga
+    # plantillas creadas por la migracion de ediciones posteriores hechas en admin.
+    # Revertir datos aqui podria borrar configuracion valida o reescribir motivos.
+    return None
 
 
 class Migration(migrations.Migration):

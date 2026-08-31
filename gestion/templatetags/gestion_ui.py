@@ -61,6 +61,13 @@ def mensaje_whatsapp_previo(gestion):
 
 
 @register.filter
+def cuerpo_whatsapp_previo(gestion):
+    from gestion.mensajes import cuerpo_whatsapp_para_gestion
+
+    return cuerpo_whatsapp_para_gestion(gestion)
+
+
+@register.filter
 def desglose_prioridad(solicitud):
     return desglosar_prioridad(
         {
