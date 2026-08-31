@@ -13,7 +13,7 @@
   </thead>
   <tbody>
     {% for gestion in gestiones %}
-      <tr class="row-link {% if gestion.intentos_contacto == 0 %}row-pending{% endif %}" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:comunicador_detalle' gestion.pk %}?fragmento=1">
+      <tr class="row-link {% if gestion.intentos_contacto == 0 %}row-pending{% endif %}" data-row-id="{{ gestion.pk }}" data-detail-url="{% url 'gestion:comunicador_detalle' gestion.pk %}">
         <td data-label="Paciente">{{ gestion.solicitud.nombre }}</td>
         <td data-label="Telefono">
           <a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a>

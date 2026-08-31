@@ -3,230 +3,93 @@
 
   document.documentElement.classList.add("js");
 
-  const dialog = document.createElement("dialog");
-  dialog.className = "gestion-dialog";
-  dialog.setAttribute("aria-label", "Detalle de solicitud");
-  document.body.appendChild(dialog);
+  // Navegacion por fila: un clic en cualquier parte de la fila abre la vista
+  // completa del caso. Los enlaces y controles internos siguen su comportamiento
+  // propio (el enlace "Abrir", el telefono, los botones deshabilitados).
+  document.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-detail-url]");
+    if (!row) return;
+    if (event.target.closest("a, button, input, select, textarea, label")) return;
+    window.location.href = row.dataset.detailUrl;
+  });
 
-  let lastTrigger = null;
-  let dialogRequestInFlight = false;
-  let dialogActionsCount = 0;
+  // WhatsApp: se abre en una pestana nueva sin perder el sistema en la actual.
+  // La pestana se abre antes del fetch para conservar el gesto del usuario y no
+  // caer en el bloqueador de popups. El POST registra el intento y devuelve la
+  // URL de wa.me; luego se recarga la vista para que el historial quede al dia.
+  let whatsappInFlight = false;
 
-  function currentSelectorSection() {
-    return document.querySelector("[data-selector-table-region]")?.dataset.selectorSection || "pendientes";
-  }
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-whatsapp-form]");
+    if (!form) return;
+    event.preventDefault();
+    if (whatsappInFlight) return;
+    whatsappInFlight = true;
 
-  function selectorFragmentUrl() {
-    const url = new URL(window.location.href);
-    url.searchParams.set("fragmento", "1");
-    url.searchParams.set("seccion", currentSelectorSection());
-    return url.toString();
-  }
-
-  async function refreshSelectorTable() {
-    const region = document.querySelector("[data-selector-table-region]");
-    if (!region) return;
-    const response = await fetch(selectorFragmentUrl(), {
-      headers: { "X-Requested-With": "fetch" },
-    });
-    const html = await response.text();
-    const fragment = extractFragmentOrNavigate(response, html);
-    if (!fragment) return;
-    if (fragment.dataset.fragmentKind !== "selector-table") return;
-    region.replaceWith(fragment);
-    document.querySelector("[data-gestion-list]")?.scrollIntoView({ block: "start" });
-  }
-
-  function extractFragmentOrNavigate(response, html) {
-    if (response.redirected) {
-      window.location.href = response.url;
-      return null;
-    }
-    const template = document.createElement("template");
-    template.innerHTML = html.trim();
-    const fragment = template.content.querySelector("[data-fragment-kind]");
-    if (!fragment) {
-      window.location.href = response.url || window.location.href;
-      return null;
-    }
-    return fragment;
-  }
-
-  function replaceDialogWithFragment(response, html) {
-    const fragment = extractFragmentOrNavigate(response, html);
-    if (!fragment) return false;
-    dialog.replaceChildren(fragment);
-    bindDialog();
-    if (!dialog.open) dialog.showModal();
-    focusDialogContent();
-    return true;
-  }
-
-  function closeDialog() {
-    dialog.close();
-  }
-
-  function removeResolvedCommunicatorRow(fragment, currentId) {
-    if (
-      fragment?.dataset.fragmentKind !== "comunicador-confirmation" ||
-      fragment.dataset.caseResolved !== "true" ||
-      !currentId
-    ) return;
-    document.querySelector(`[data-row-id="${currentId}"]`)?.remove();
-  }
-
-  function focusDialogContent() {
-    const focusTarget = dialog.querySelector(
-      "[data-dialog-error-focus], [data-dialog-focus]"
-    );
-    if (focusTarget) focusTarget.focus();
-  }
-
-  function setDialogButtonsDisabled(disabled) {
-    dialog.querySelectorAll("[data-fragment-form] button").forEach((button) => {
-      button.disabled = disabled;
-    });
-  }
-
-  function mostrarErrorDeEnvio() {
-    let status = dialog.querySelector("[data-dialog-status]");
-    if (!status) {
-      status = document.createElement("p");
-      status.className = "danger-text";
-      status.setAttribute("role", "alert");
-      status.setAttribute("data-dialog-status", "");
-      status.tabIndex = -1;
-      dialog.querySelector(".modal-header")?.after(status);
-    }
-    status.textContent = "No se pudo guardar. Intente nuevamente.";
-    status.focus();
-  }
-
-  async function loadFragment(url) {
-    const response = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
-    if (!response.ok) throw new Error("No se pudo cargar el detalle.");
-    replaceDialogWithFragment(response, await response.text());
-  }
-
-  async function submitFragmentForm(form, submitter) {
-    if (dialogRequestInFlight) return;
-    dialogRequestInFlight = true;
-    const currentId = dialog.querySelector("[data-current-row-id]")?.dataset.currentRowId;
-    setDialogButtonsDisabled(true);
-    const data = new FormData(form);
-    if (submitter && submitter.name) data.set(submitter.name, submitter.value);
-    const action = submitter && submitter.formAction ? submitter.formAction : form.action;
-    try {
-      const response = await fetch(action, {
-        method: "POST",
-        body: data,
-        headers: { "X-Requested-With": "fetch" },
-      });
-      if (!response.ok) {
-        throw new Error("No se pudo guardar.");
-      }
-      const html = await response.text();
-      if (replaceDialogWithFragment(response, html)) {
-        removeResolvedCommunicatorRow(
-          dialog.querySelector('[data-fragment-kind="comunicador-confirmation"]'),
-          currentId
-        );
-        dialogActionsCount += 1;
-      }
-    } finally {
-      dialogRequestInFlight = false;
-    }
-  }
-
-  async function submitWhatsappForm(form, submitter) {
-    if (dialogRequestInFlight) return;
     const popup = window.open("", "_blank");
     if (popup) popup.opener = null;
-    dialogRequestInFlight = true;
-    setDialogButtonsDisabled(true);
-    const data = new FormData(form);
-    if (submitter && submitter.name) data.set(submitter.name, submitter.value);
-    try {
-      const response = await fetch(form.action, {
-        method: "POST",
-        body: data,
-        headers: { "X-Requested-With": "fetch" },
-      });
-      if (!response.ok) throw new Error("No se pudo guardar.");
-      const html = await response.text();
-      const replaced = replaceDialogWithFragment(response, html);
-      const url = dialog.querySelector("[data-whatsapp-url]")?.dataset.whatsappUrl;
-      if (url && popup) {
-        popup.location.href = url;
-      } else if (url) {
-        mostrarEnlaceWhatsapp(url);
-      } else if (popup) {
-        popup.close();
-      }
-      if (replaced) dialogActionsCount += 1;
-    } finally {
-      dialogRequestInFlight = false;
-    }
-  }
 
-  function mostrarEnlaceWhatsapp(url) {
-    let status = dialog.querySelector("[data-dialog-status]");
-    if (!status) {
-      status = document.createElement("p");
-      status.className = "warning-text";
-      status.setAttribute("role", "alert");
-      status.setAttribute("data-dialog-status", "");
-      dialog.querySelector(".modal-header")?.after(status);
-    }
-    status.innerHTML = `<a href="${url}" target="_blank" rel="noopener">Abrir WhatsApp</a>`;
-  }
+    const separador = form.action.includes("?") ? "&" : "?";
+    const action = form.action + separador + "fragmento=1";
 
-  function bindDialog() {
-    dialog.querySelectorAll("[data-dialog-close]").forEach((button) => {
-      button.addEventListener("click", closeDialog);
-    });
-    dialog.querySelectorAll("[data-fragment-form]").forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        submitFragmentForm(form, event.submitter).catch(() => {
-          setDialogButtonsDisabled(false);
-          mostrarErrorDeEnvio();
-        });
-      });
-    });
-    dialog.querySelectorAll("[data-whatsapp-form]").forEach((form) => {
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        submitWhatsappForm(form, event.submitter).catch(() => {
-          setDialogButtonsDisabled(false);
-          mostrarErrorDeEnvio();
-        });
-      });
-    });
-  }
+    fetch(action, {
+      method: "POST",
+      body: new FormData(form),
+      headers: { "X-Requested-With": "fetch" },
+    })
+      .then((response) => response.text().then((html) => ({ response, html })))
+      .then(({ response, html }) => {
+        if (response.redirected) {
+          if (popup) popup.close();
+          window.location.href = response.url;
+          return;
+        }
+        const plantilla = document.createElement("template");
+        plantilla.innerHTML = html.trim();
+        const fragmento = plantilla.content.querySelector("[data-fragment-kind]");
+        const url = fragmento && fragmento.dataset.whatsappUrl;
 
-  document.addEventListener("click", (event) => {
-    const close = event.target.closest("[data-dialog-close]");
-    if (close) {
-      closeDialog();
-      return;
-    }
-    const row = event.target.closest("[data-detail-url]");
-    if (!row || event.target.closest("a, button, input, select, textarea")) return;
-    event.preventDefault();
-    lastTrigger = row;
-    loadFragment(row.dataset.detailUrl).catch(() => {
-      window.location.href = row.querySelector("a[href]").href;
-    });
+        if (url && popup) {
+          popup.location.href = url;
+          window.location.reload();
+          return;
+        }
+        if (url) {
+          mostrarEnlaceManual(form, url);
+          whatsappInFlight = false;
+          return;
+        }
+        // Sin URL: telefono invalido o cuerpo rechazado. Se muestra el detalle
+        // devuelto con sus errores, sin recargar para no perderlos.
+        if (popup) popup.close();
+        const actual = document.querySelector('[data-fragment-kind="comunicador-detail"]');
+        if (fragmento && actual) {
+          actual.replaceWith(fragmento);
+        } else {
+          window.location.reload();
+        }
+        whatsappInFlight = false;
+      })
+      .catch(() => {
+        if (popup) popup.close();
+        whatsappInFlight = false;
+        form.submit();
+      });
   });
 
-  dialog.addEventListener("close", () => {
-    const shouldRefreshSelector = dialogActionsCount > 0 && document.querySelector("[data-selector-table-region]");
-    dialog.innerHTML = "";
-    dialogActionsCount = 0;
-    if (lastTrigger) lastTrigger.focus();
-    if (shouldRefreshSelector) {
-      refreshSelectorTable().catch(() => window.location.reload());
+  function mostrarEnlaceManual(form, url) {
+    let aviso = form.querySelector("[data-whatsapp-manual]");
+    if (!aviso) {
+      aviso = document.createElement("p");
+      aviso.className = "warning-text";
+      aviso.setAttribute("data-whatsapp-manual", "");
+      const enlace = document.createElement("a");
+      enlace.target = "_blank";
+      enlace.rel = "noopener";
+      enlace.textContent = "Abrir WhatsApp";
+      aviso.appendChild(enlace);
+      form.prepend(aviso);
     }
-  });
+    aviso.querySelector("a").href = url;
+  }
 })();

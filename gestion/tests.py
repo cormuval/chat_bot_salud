@@ -2122,7 +2122,7 @@ class GestionListasUiTests(TestCase):
         self.assertContains(response, "Urgente")
         self.assertContains(
             response,
-            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            f'data-detail-url="/selector/{gestion.pk}/?seccion=pendientes"',
             html=False,
         )
         self.assertNotContains(response, "<th>Decision</th>", html=False)
@@ -2243,9 +2243,10 @@ class GestionAccesibilidadMarkupTests(TestCase):
             f'href="/selector/{gestion.pk}/?seccion=pendientes"',
             html=False,
         )
+        # La fila navega a la vista completa del caso, no a un fragmento de modal.
         self.assertContains(
             response,
-            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            f'data-detail-url="/selector/{gestion.pk}/?seccion=pendientes"',
             html=False,
         )
 
@@ -2279,31 +2280,28 @@ class GestionAccesibilidadMarkupTests(TestCase):
         )
         self.assertContains(response, '<details class="agenda-box">', html=False)
 
-    def test_js_de_fragmentos_no_reenvia_formularios_y_refresca_tabla_al_cerrar(self):
+    def test_js_navega_por_fila_y_abre_whatsapp_en_pestana_nueva(self):
         javascript = (
             Path(__file__).resolve().parent.parent / "static" / "js" / "gestion.js"
         ).read_text()
-        self.assertNotIn("form.submit()", javascript)
+        # Ya no hay modal: nada de dialog ni de refresco incremental de tabla.
+        self.assertNotIn("showModal", javascript)
+        self.assertNotIn("gestion-dialog", javascript)
+        self.assertNotIn("dialogActionsCount", javascript)
+        self.assertNotIn("refreshSelectorTable", javascript)
+        self.assertNotIn("data-selector-table-region", javascript)
         self.assertNotIn("data-selector-counter", javascript)
-        self.assertNotIn("data-selector-correction", javascript)
         self.assertNotIn("data-selector-row-action", javascript)
-        self.assertIn("dialogActionsCount", javascript)
-        self.assertIn("refreshSelectorTable", javascript)
-        self.assertIn("data-selector-table-region", javascript)
-        self.assertIn("removeResolvedCommunicatorRow", javascript)
-        self.assertIn('data-fragment-kind="comunicador-confirmation"', javascript)
-        self.assertIn('dataset.caseResolved !== "true"', javascript)
-        self.assertIn("response.redirected", javascript)
-        self.assertIn("data-fragment-kind", javascript)
-        self.assertIn("dialogRequestInFlight", javascript)
-        self.assertIn("setDialogButtonsDisabled", javascript)
-        self.assertNotIn('window.open("", "_blank", "noopener")', javascript)
+        # La fila navega a la vista completa del caso.
+        self.assertIn("data-detail-url", javascript)
+        self.assertIn("window.location.href = row.dataset.detailUrl", javascript)
+        # WhatsApp: pestana nueva antes del fetch, registro por fragmento y URL.
+        self.assertIn("data-whatsapp-form", javascript)
         self.assertIn('window.open("", "_blank")', javascript)
         self.assertIn("popup.opener = null", javascript)
-        self.assertIn("popup.location.href = url", javascript)
-        cierre_dialogo = javascript[javascript.index('dialog.addEventListener("close"') :]
-        self.assertIn("dialogActionsCount > 0", cierre_dialogo)
-        self.assertIn("refreshSelectorTable", cierre_dialogo)
+        self.assertIn("fragmento=1", javascript)
+        self.assertIn("dataset.whatsappUrl", javascript)
+        self.assertIn("response.redirected", javascript)
 
     def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
         vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"

@@ -108,7 +108,7 @@ class WhatsappComunicadorForm(forms.Form):
     cuerpo = forms.CharField(
         max_length=800,
         required=True,
-        widget=forms.Textarea(attrs={"rows": 5}),
+        widget=forms.Textarea(attrs={"rows": 2}),
         error_messages={
             "required": "Debe escribir el cuerpo del mensaje.",
             "max_length": "El cuerpo no puede superar 800 caracteres.",

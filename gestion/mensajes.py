@@ -1,7 +1,7 @@
 import re
 from urllib.parse import quote_plus
 
-from .models import Gestion, PlantillaWhatsapp
+from .models import PlantillaWhatsapp
 
 
 def cuerpo_whatsapp_para_gestion(gestion):
@@ -11,7 +11,11 @@ def cuerpo_whatsapp_para_gestion(gestion):
 
 
 def armar_mensaje_whatsapp(gestion, cuerpo):
+    # El cuerpo es editable y puede arrastrar el marcador {nombre} desde una
+    # plantilla o un motivo de rechazo. Se sustituye aca para que nunca salga
+    # crudo al paciente, igual que hacia el codigo previo a la unificacion.
     cuerpo_limpio = " ".join((cuerpo or "").split())
+    cuerpo_limpio = cuerpo_limpio.replace("{nombre}", gestion.solicitud.nombre)
     return (
         f"Hola, {gestion.solicitud.nombre}. Somos del "
         f"{gestion.solicitud.centro_salud}.\n"
