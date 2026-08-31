@@ -2353,7 +2353,7 @@ class GestionAccesibilidadMarkupTests(TestCase):
 
     def test_base_expone_sprite_svg_de_iconos_de_gestion(self):
         response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
-        self.assertContains(response, '<svg hidden aria-hidden="true"', html=False)
+        self.assertContains(response, '<svg aria-hidden="true" focusable="false" class="icon-sprite"', html=False)
         for symbol_id in (
             "ic-check",
             "ic-x",
