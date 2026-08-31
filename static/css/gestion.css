@@ -75,7 +75,7 @@ button { cursor: pointer; }
 .gestion-nav {
   display: flex;
   gap: var(--space-2);
-  padding: 0 var(--space-5) var(--space-3);
+  padding: var(--space-3) var(--space-5);
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
@@ -150,9 +150,12 @@ button { cursor: pointer; }
 }
 .gestion-dialog::backdrop { background: rgba(15, 23, 42, 0.42); }
 .modal-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--soft-shadow); overflow: hidden; }
-.modal-header, .modal-actions { padding: var(--space-4); border-bottom: 1px solid var(--line); display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
+.modal-header, .modal-actions { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
 .modal-actions { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; background: var(--surface); flex-wrap: wrap; }
-.modal-body { padding: var(--space-4); display: grid; gap: var(--space-3); }
+.modal-body { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-3); }
+.modal-body > section { display: grid; gap: var(--space-1); }
+.modal-body h3 { margin: 0; }
+.modal-body > section > p { margin: 0; }
 .detail-grid { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--space-2) var(--space-4); }
 .detail-grid dt { color: var(--muted); font-weight: 700; }
 .detail-grid dd { margin: 0; }
@@ -166,7 +169,7 @@ button { cursor: pointer; }
 @media (max-width: 900px) {
   .gestion-header { grid-template-columns: 1fr; padding: var(--space-3); }
   .session-box { justify-content: flex-start; }
-  .gestion-nav { padding: 0 var(--space-3) var(--space-3); overflow-x: auto; }
+  .gestion-nav { padding: var(--space-3); overflow-x: auto; }
   .gestion-main { width: min(100% - 20px, 1280px); padding: var(--space-3) 0; }
   .data-table, .data-table thead, .data-table tbody, .data-table tr, .data-table th, .data-table td { display: block; }
   .data-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -285,7 +288,7 @@ button:disabled {
 }
 .contact-history {
   border-top: 1px solid var(--line);
-  padding-top: var(--space-3);
+  padding-top: var(--space-2);
 }
 
 .contact-history summary {
@@ -295,7 +298,7 @@ button:disabled {
 
 .history-table {
   width: 100%;
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
   border-collapse: collapse;
 }
 
