@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
+from .mensajes import armar_mensaje_whatsapp, url_whatsapp_para_gestion
 from .models import Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
@@ -67,6 +68,35 @@ def _texto_correccion_selector(gestion):
     return "Sin intentos registrados"
 
 
+def _registros_contacto(gestion):
+    return list(
+        gestion.registros_contacto.select_related("usuario").order_by(
+            "-creado_en", "-pk"
+        )
+    )
+
+
+def _contexto_detalle_comunicador(
+    perfil,
+    gestion,
+    form,
+    form_whatsapp,
+    puede_escribir,
+    es_fragmento,
+    whatsapp_url="",
+):
+    return {
+        "perfil": perfil,
+        "gestion": gestion,
+        "form": form,
+        "form_whatsapp": form_whatsapp,
+        "puede_escribir": puede_escribir,
+        "es_fragmento": es_fragmento,
+        "whatsapp_url": whatsapp_url,
+        "registros_contacto": _registros_contacto(gestion),
+    }
+
+
 @login_required
 def panel(request):
     perfil = obtener_perfil_activo(request.user)
@@ -105,19 +135,18 @@ def selector_lista(request):
     else:
         seccion = "pendientes"
         gestiones = Gestion.objects.cola_selector(perfil)
-    return render(
-        request,
-        "gestion/selector_lista.html",
-        {
-            "perfil": perfil,
-            "gestiones": gestiones,
-            "puede_escribir": puede_escribir_selector(perfil),
-            "seccion": seccion,
-            "mostrar_no_aplica": mostrar_no_aplica,
-            "conteos_selector": conteos_selector,
-            "mostrar_columna_centro": mostrar_columna_centro,
-        },
-    )
+    context = {
+        "perfil": perfil,
+        "gestiones": gestiones,
+        "puede_escribir": puede_escribir_selector(perfil),
+        "seccion": seccion,
+        "mostrar_no_aplica": mostrar_no_aplica,
+        "conteos_selector": conteos_selector,
+        "mostrar_columna_centro": mostrar_columna_centro,
+    }
+    if request.GET.get("fragmento") == "1":
+        return render(request, "gestion/_tabla_selector.html", context)
+    return render(request, "gestion/selector_lista.html", context)
 
 
 @login_required
@@ -257,7 +286,7 @@ def comunicador_detalle(request, pk):
         gestion = get_object_or_404(Gestion.objects.tabla_comunicador(perfil), pk=pk)
     puede_escribir = puede_escribir_comunicador(perfil)
     form = AccionComunicadorForm(request.POST or None)
-    form_whatsapp = WhatsappComunicadorForm()
+    form_whatsapp = WhatsappComunicadorForm(gestion=gestion)
     if request.method == "POST":
         if not puede_escribir:
             return redirect("gestion:sin_acceso")
@@ -282,14 +311,14 @@ def comunicador_detalle(request, pk):
     return render(
         request,
         template,
-        {
-            "perfil": perfil,
-            "gestion": gestion,
-            "form": form,
-            "form_whatsapp": form_whatsapp,
-            "puede_escribir": puede_escribir,
-            "es_fragmento": es_fragmento,
-        },
+        _contexto_detalle_comunicador(
+            perfil,
+            gestion,
+            form,
+            form_whatsapp,
+            puede_escribir,
+            es_fragmento,
+        ),
     )
 
 
@@ -300,18 +329,34 @@ def registrar_whatsapp(request, pk):
     if perfil is None or not puede_escribir_comunicador(perfil):
         return redirect("gestion:sin_acceso")
     gestion = _gestion_para_post_comunicador_o_404(perfil, pk)
-    url = gestion.url_whatsapp()
+    es_fragmento = request.GET.get("fragmento") == "1"
+    form = WhatsappComunicadorForm(request.POST, gestion=gestion)
+    if not form.is_valid():
+        if es_fragmento:
+            return render(
+                request,
+                "gestion/_detalle_comunicador.html",
+                _contexto_detalle_comunicador(
+                    perfil,
+                    gestion,
+                    AccionComunicadorForm(),
+                    form,
+                    True,
+                    True,
+                ),
+            )
+        messages.error(request, "El formulario de WhatsApp no es valido.")
+        return redirect("gestion:comunicador_detalle", pk=gestion.pk)
+    url = url_whatsapp_para_gestion(gestion, cuerpo=form.cleaned_data["cuerpo"])
     if not url:
         messages.error(request, "La solicitud no tiene un telefono valido para WhatsApp.")
         return redirect("gestion:comunicador_detalle", pk=gestion.pk)
-    form = WhatsappComunicadorForm(request.POST)
-    if not form.is_valid():
-        messages.error(request, "El formulario de WhatsApp no es valido.")
-        return redirect("gestion:comunicador_detalle", pk=gestion.pk)
+    mensaje = armar_mensaje_whatsapp(gestion, form.cleaned_data["cuerpo"])
     try:
         gestion.registrar_click_whatsapp(
             request.user,
             token_contacto=form.cleaned_data.get("token_contacto", ""),
+            mensaje=mensaje,
         )
     except ValidationError:
         messages.error(
@@ -320,4 +365,21 @@ def registrar_whatsapp(request, pk):
         )
         return redirect("gestion:comunicador_lista")
     _advertir_cierre_automatico(request, gestion)
+    if es_fragmento:
+        return render(
+            request,
+            "gestion/_detalle_comunicador.html",
+            _contexto_detalle_comunicador(
+                perfil,
+                gestion,
+                AccionComunicadorForm(),
+                WhatsappComunicadorForm(
+                    initial={"cuerpo": form.cleaned_data["cuerpo"]},
+                    gestion=gestion,
+                ),
+                True,
+                True,
+                whatsapp_url=url,
+            ),
+        )
     return HttpResponseRedirect(url)

@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import Gestion, MotivoRechazo, PerfilUsuario
+from .models import (
+    Gestion,
+    MotivoRechazo,
+    PerfilUsuario,
+    PlantillaWhatsapp,
+    RegistroContacto,
+)
 
 
 @admin.register(PerfilUsuario)
@@ -18,6 +24,27 @@ class MotivoRechazoAdmin(admin.ModelAdmin):
     list_filter = ("activo",)
     search_fields = ("nombre", "mensaje_paciente")
     ordering = ("orden", "nombre")
+
+
+@admin.register(PlantillaWhatsapp)
+class PlantillaWhatsappAdmin(admin.ModelAdmin):
+    list_display = ("clave", "descripcion", "activo")
+    list_filter = ("activo",)
+    search_fields = ("clave", "descripcion", "cuerpo")
+
+
+@admin.register(RegistroContacto)
+class RegistroContactoAdmin(admin.ModelAdmin):
+    list_display = ("gestion", "canal", "resultado", "usuario", "creado_en")
+    list_filter = ("canal", "resultado", "creado_en")
+    search_fields = (
+        "gestion__solicitud__nombre",
+        "gestion__solicitud__rut",
+        "usuario__email",
+        "mensaje",
+    )
+    readonly_fields = ("gestion", "canal", "resultado", "mensaje", "usuario", "creado_en")
+    list_select_related = ("gestion", "gestion__solicitud", "usuario")
 
 
 @admin.register(Gestion)

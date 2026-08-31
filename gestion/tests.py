@@ -8,13 +8,20 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.color import no_style
 from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
 from django.http import Http404
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.template import Context, Template
 from django.utils import timezone
 
 from gestion.auth import OIDCAuthenticationBackendGestion
-from gestion.models import Gestion, MotivoRechazo, PerfilUsuario
+from gestion.models import (
+    Gestion,
+    MotivoRechazo,
+    PerfilUsuario,
+    PlantillaWhatsapp,
+    RegistroContacto,
+)
 from gestion.permisos import (
     gestion_alcanzable_o_404,
     puede_escribir_comunicador,
@@ -576,6 +583,36 @@ class GestionModeloTests(TestCase):
         self.assertIsNotNone(gestion.fecha_ultimo_intento)
         self.assertIsNone(gestion.cerrada_en)
 
+    def test_registrar_no_contesta_crea_registro_contacto_de_llamada(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-llamada")
+        registro = gestion.registros_contacto.get()
+        self.assertEqual(registro.canal, RegistroContacto.Canal.LLAMADA)
+        self.assertEqual(registro.resultado, Gestion.AccionContacto.NO_CONTESTA)
+        self.assertEqual(registro.usuario, self.usuario)
+        self.assertEqual(registro.mensaje, "")
+
+    def test_registrar_whatsapp_crea_registro_con_mensaje(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_click_whatsapp(
+            self.usuario,
+            token_contacto="token-whatsapp",
+            mensaje="Mensaje enviado.",
+        )
+        registro = gestion.registros_contacto.get()
+        self.assertEqual(registro.canal, RegistroContacto.Canal.WHATSAPP)
+        self.assertEqual(registro.resultado, Gestion.AccionContacto.WHATSAPP)
+        self.assertEqual(registro.mensaje, "Mensaje enviado.")
+
+    def test_token_duplicado_no_duplica_historial(self):
+        gestion = crear_solicitud_base().gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-repetido")
+        gestion.registrar_no_contesta(self.usuario, token_contacto="token-repetido")
+        self.assertEqual(gestion.registros_contacto.count(), 1)
+
     def test_no_contesta_duplicado_no_suma_otro_intento(self):
         gestion = crear_solicitud_base().gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
@@ -658,6 +695,32 @@ class GestionModeloTests(TestCase):
         url = gestion.url_whatsapp()
         self.assertTrue(url.startswith("https://wa.me/56949106239?text="))
         self.assertIn("Ana+Perez", url)
+
+    def test_url_whatsapp_aceptada_usa_plantilla_activa_y_partes_fijas(self):
+        PlantillaWhatsapp.objects.update_or_create(
+            clave="aceptada",
+            defaults={
+                "descripcion": "Aceptada",
+                "cuerpo": "Estamos intentando comunicarnos con usted.",
+            },
+        )
+        gestion = crear_solicitud_base(nombre="Ana Perez").gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        url = gestion.url_whatsapp()
+        self.assertTrue(url.startswith("https://wa.me/56949106239?text="))
+        self.assertIn("Hola%2C+Ana+Perez.", url)
+        self.assertIn("Estamos+intentando+comunicarnos+con+usted.", url)
+        self.assertIn("Muchas+gracias.", url)
+
+    def test_url_whatsapp_rechazada_usa_motivo_como_cuerpo_sin_duplicar_saludo(self):
+        self.motivo.mensaje_paciente = "Faltan datos para continuar."
+        self.motivo.save(update_fields=["mensaje_paciente"])
+        gestion = crear_solicitud_base(nombre="Ana Perez").gestion
+        gestion.rechazar(self.usuario, self.motivo)
+        url = gestion.url_whatsapp()
+        self.assertIn("Hola%2C+Ana+Perez.", url)
+        self.assertIn("Faltan+datos+para+continuar.", url)
+        self.assertEqual(url.count("Hola"), 1)
 
     def test_url_whatsapp_no_falla_con_marcador_desconocido(self):
         self.motivo.mensaje_paciente = "Hola {nombre}, centro {centro}."
@@ -1091,46 +1154,35 @@ class SelectorViewsTests(TestCase):
         self.assertContains(response, f'data-current-row-id="{segundo.pk}"', html=False)
         self.assertContains(response, "Aceptada como Alta")
 
-    def test_post_fragmento_selector_desde_pendientes_expone_transicion_de_contadores(self):
-        primero = crear_solicitud_base(
-            centro_salud=self.centro,
-            priorizacion_solicitud=Solicitud.Prioridad.URGENTE,
-        ).gestion
-        crear_solicitud_base(
-            centro_salud=self.centro,
-            priorizacion_solicitud=Solicitud.Prioridad.BAJA,
+    def test_selector_lista_fragmento_devuelve_solo_region_refrescable(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            "/selector/?fragmento=1&seccion=pendientes",
+            HTTP_HOST="gestion.localhost",
         )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-table"', html=False)
+        self.assertContains(response, f'data-row-id="{gestion.pk}"', html=False)
+        self.assertNotContains(response, "<html", html=False)
 
+    def test_post_fragmento_selector_no_expone_transicion_incremental(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         response = self.client.post(
-            f"/selector/{primero.pk}/?fragmento=1&seccion=pendientes",
+            f"/selector/{gestion.pk}/?fragmento=1&seccion=pendientes",
             {
                 "decision": Gestion.Decision.ACEPTADA,
                 "prioridad_clinica": Solicitud.Prioridad.ALTA,
             },
             HTTP_HOST="gestion.localhost",
         )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="selector-empty"', html=False)
+        self.assertNotContains(response, "data-selector-row-action", html=False)
+        self.assertNotContains(response, "data-selector-correction-text", html=False)
 
-        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
-        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
-        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
-
-    def test_post_fragmento_selector_no_aplica_expone_transicion_de_contadores(self):
-        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
-
-        response = self.client.post(
-            f"/selector/{gestion.pk}/?fragmento=1&seccion=pendientes",
-            {"decision": Gestion.Decision.NO_APLICA},
-            HTTP_HOST="gestion.localhost",
-        )
-
-        self.assertContains(response, 'data-selector-source-section="pendientes"', html=False)
-        self.assertContains(response, 'data-selector-destination-section="no_aplica"', html=False)
-        self.assertContains(response, 'data-selector-row-action="remove"', html=False)
-
-    def test_post_fragmento_selector_desde_decididas_conserva_caso_corregible(self):
+    def test_post_fragmento_selector_desde_decididas_sigue_mostrando_caso_corregible(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
-
         response = self.client.post(
             f"/selector/{gestion.pk}/?fragmento=1&seccion=decididas",
             {
@@ -1141,10 +1193,8 @@ class SelectorViewsTests(TestCase):
         )
 
         self.assertContains(response, f'data-current-row-id="{gestion.pk}"', html=False)
-        self.assertContains(response, 'data-selector-source-section="decididas"', html=False)
-        self.assertContains(response, 'data-selector-destination-section="decididas"', html=False)
-        self.assertContains(response, 'data-selector-row-action="keep"', html=False)
-        self.assertContains(response, 'data-selector-correction-text="quedan', html=False)
+        self.assertNotContains(response, "data-selector-row-action", html=False)
+        self.assertContains(response, "quedan", html=False)
 
     def test_post_sin_fragmento_selector_redirige_a_seccion_de_origen(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
@@ -1296,7 +1346,7 @@ class ComunicadorViewsTests(TestCase):
 
         self.client.post(
             f"{detalle}whatsapp/",
-            {"token_contacto": token_whatsapp},
+            {"token_contacto": token_whatsapp, "cuerpo": "Mensaje de prueba."},
             HTTP_HOST="gestion.localhost",
         )
         self.client.post(
@@ -1325,7 +1375,7 @@ class ComunicadorViewsTests(TestCase):
         )
         self.client.post(
             f"{detalle}whatsapp/",
-            {"token_contacto": token_whatsapp},
+            {"token_contacto": token_whatsapp, "cuerpo": "Mensaje de prueba."},
             HTTP_HOST="gestion.localhost",
         )
 
@@ -1420,7 +1470,11 @@ class ComunicadorViewsTests(TestCase):
     def test_whatsapp_registra_intento_y_redirige_a_wa_me(self):
         gestion = crear_solicitud_base(centro_salud=self.centro).gestion
         gestion.rechazar(self.usuario, self.motivo)
-        response = self.client.post(f"/comunicador/{gestion.pk}/whatsapp/", HTTP_HOST="gestion.localhost")
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/whatsapp/",
+            {"cuerpo": "Mensaje de prueba."},
+            HTTP_HOST="gestion.localhost",
+        )
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith("https://wa.me/"))
         gestion.refresh_from_db()
@@ -1442,7 +1496,10 @@ class ComunicadorViewsTests(TestCase):
         ):
             response = self.client.post(
                 f"/comunicador/{gestion.pk}/whatsapp/",
-                {"token_contacto": "token-whatsapp-obsoleto"},
+                {
+                    "token_contacto": "token-whatsapp-obsoleto",
+                    "cuerpo": "Mensaje de prueba.",
+                },
                 HTTP_HOST="gestion.localhost",
             )
 
@@ -1545,7 +1602,7 @@ class ComunicadorViewsTests(TestCase):
             f"/comunicador/{gestion.pk}/?fragmento=1",
             HTTP_HOST="gestion.localhost",
         )
-        self.assertContains(response, "Vista previa de WhatsApp")
+        self.assertContains(response, "Mensaje de WhatsApp")
         self.assertContains(response, "Ana Perez")
 
     def test_fragmento_comunicador_invalido_deshabilita_whatsapp(self):
@@ -1590,6 +1647,311 @@ class ComunicadorViewsTests(TestCase):
         self.assertContains(response, "Debe indicar fecha y hora acordadas")
         self.assertContains(response, '<details class="agenda-box" open>', html=False)
         self.assertContains(response, 'data-dialog-error-focus', html=False)
+
+    def test_fragmento_comunicador_whatsapp_tiene_partes_fijas_fuera_del_textarea(self):
+        PlantillaWhatsapp.objects.update_or_create(
+            clave="aceptada",
+            defaults={
+                "descripcion": "Aceptada",
+                "cuerpo": "Cuerpo editable.",
+            },
+        )
+        gestion = crear_solicitud_base(centro_salud=self.centro, nombre="Ana Perez").gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Hola, Ana Perez. Somos del")
+        self.assertContains(response, "Muchas gracias.")
+        self.assertContains(response, 'name="cuerpo"', html=False)
+        textarea_start = response.content.decode("utf-8").index('name="cuerpo"')
+        textarea_chunk = response.content.decode("utf-8")[textarea_start:textarea_start + 300]
+        self.assertNotIn("Ana Perez", textarea_chunk)
+        self.assertIn("Cuerpo editable.", textarea_chunk)
+
+    def test_whatsapp_fragmentado_devuelve_modal_con_url_y_registra_cuerpo_editado(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro, nombre="Ana Perez").gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        token = response.context["form_whatsapp"]["token_contacto"].value()
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/whatsapp/?fragmento=1",
+            {"token_contacto": token, "cuerpo": "Mensaje editado por comunicador."},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fragment-kind="comunicador-detail"', html=False)
+        self.assertContains(response, "data-whatsapp-url=", html=False)
+        self.assertContains(response, "Mensaje editado por comunicador.")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 1)
+        registro = gestion.registros_contacto.get()
+        self.assertEqual(
+            registro.mensaje,
+            "Hola, Ana Perez. Somos del Centro De Salud Familiar Rodelillo.\n"
+            "Mensaje editado por comunicador.\nMuchas gracias.",
+        )
+
+    def test_whatsapp_fragmentado_rechaza_cuerpo_vacio_sin_registrar_intento(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.post(
+            f"/comunicador/{gestion.pk}/whatsapp/?fragmento=1",
+            {"token_contacto": "token-vacio", "cuerpo": "   "},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, "Debe escribir el cuerpo del mensaje.")
+        gestion.refresh_from_db()
+        self.assertEqual(gestion.intentos_contacto, 0)
+
+    def test_fragmento_comunicador_muestra_bitacora_de_comunicaciones(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="llamada-1")
+        gestion.registrar_click_whatsapp(
+            self.usuario,
+            token_contacto="wsp-1",
+            mensaje="Hola, paciente. Mensaje enviado.",
+        )
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Historial de comunicaciones (2)")
+        self.assertContains(response, "Llamada telefonica")
+        self.assertContains(response, "WhatsApp")
+        self.assertContains(response, "Mensaje enviado.")
+        self.assertContains(response, self.usuario.email or self.usuario.username)
+
+    def test_historial_visible_para_solo_lectura(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        gestion.registrar_no_contesta(self.usuario, token_contacto="solo-lectura")
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        self.assertContains(response, "Historial de comunicaciones (1)")
+        self.assertContains(response, "Vista de solo lectura")
+
+    def test_whatsapp_solo_lectura_no_duplica_saludo_ni_cierre(self):
+        gestion = crear_solicitud_base(
+            centro_salud=self.centro,
+            nombre="Ana Perez",
+        ).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        self.perfil.rol = PerfilUsuario.Rol.ADMIN
+        self.perfil.save(update_fields=["rol"])
+
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+
+        contenido = response.content.decode("utf-8")
+        self.assertEqual(contenido.count("Hola, Ana Perez. Somos del"), 1)
+        self.assertEqual(contenido.count("Muchas gracias."), 1)
+        self.assertContains(response, "Estamos intentando comunicarnos")
+
+
+class PlantillaWhatsappMigrationTests(TransactionTestCase):
+    serialized_rollback = True
+
+    migrate_from = [("gestion", "0006_plantilla_whatsapp_y_help_text")]
+    migrate_to = [("gestion", "0007_seed_plantilla_whatsapp_y_limpia_motivos")]
+    migrate_latest = [("gestion", "0009_backfill_registro_contacto")]
+
+    def setUp(self):
+        super().setUp()
+        self.executor = MigrationExecutor(connection)
+        self.executor.migrate(self.migrate_from)
+        self.apps = self.executor.loader.project_state(self.migrate_from).apps
+
+    def tearDown(self):
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_latest)
+        super().tearDown()
+
+    def test_reverse_no_borra_plantilla_editada_ni_reescribe_motivos(self):
+        MotivoRechazoHistorico = self.apps.get_model("gestion", "MotivoRechazo")
+
+        con_saludo = MotivoRechazoHistorico.objects.create(
+            nombre="Con saludo",
+            mensaje_paciente="Hola {nombre}, faltan datos.",
+        )
+        sin_saludo = MotivoRechazoHistorico.objects.create(
+            nombre="Sin saludo",
+            mensaje_paciente="Favor traer carnet.",
+        )
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        MotivoMigrado = apps.get_model("gestion", "MotivoRechazo")
+        PlantillaMigrada = apps.get_model("gestion", "PlantillaWhatsapp")
+
+        self.assertEqual(
+            MotivoMigrado.objects.get(pk=con_saludo.pk).mensaje_paciente,
+            "faltan datos.",
+        )
+        self.assertEqual(
+            MotivoMigrado.objects.get(pk=sin_saludo.pk).mensaje_paciente,
+            "Favor traer carnet.",
+        )
+        plantilla = PlantillaMigrada.objects.get(clave="aceptada")
+        PlantillaMigrada.objects.filter(pk=plantilla.pk).update(
+            cuerpo="Texto editado por admin."
+        )
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_from)
+        apps = self.executor.loader.project_state(self.migrate_from).apps
+        MotivoRevertido = apps.get_model("gestion", "MotivoRechazo")
+        PlantillaRevertida = apps.get_model("gestion", "PlantillaWhatsapp")
+
+        self.assertEqual(
+            PlantillaRevertida.objects.get(clave="aceptada").cuerpo,
+            "Texto editado por admin.",
+        )
+        self.assertEqual(
+            MotivoRevertido.objects.get(pk=con_saludo.pk).mensaje_paciente,
+            "faltan datos.",
+        )
+        self.assertEqual(
+            MotivoRevertido.objects.get(pk=sin_saludo.pk).mensaje_paciente,
+            "Favor traer carnet.",
+        )
+
+
+class RegistroContactoBackfillMigrationTests(TransactionTestCase):
+    serialized_rollback = True
+
+    migrate_from = [("gestion", "0008_registro_contacto")]
+    migrate_to = [("gestion", "0009_backfill_registro_contacto")]
+
+    def setUp(self):
+        super().setUp()
+        self.executor = MigrationExecutor(connection)
+        self.executor.migrate(self.migrate_from)
+        self.apps = self.executor.loader.project_state(self.migrate_from).apps
+
+    def tearDown(self):
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        super().tearDown()
+
+    def _crear_gestion_con_token(self, token="token-backfill"):
+        User = self.apps.get_model("auth", "User")
+        Centro = self.apps.get_model("solicitudes", "Centro")
+        Solicitud = self.apps.get_model("solicitudes", "Solicitud")
+        GestionHistorica = self.apps.get_model("gestion", "Gestion")
+        TokenContactoGestion = self.apps.get_model("gestion", "TokenContactoGestion")
+
+        usuario = User.objects.create_user("migracion-backfill")
+        solicitud = Solicitud.objects.create(
+            nombre="Ana Maria Perez",
+            rut="25747311-2",
+            edad=34,
+            sexo="N",
+            telefono="+56949106239",
+            centro_salud=Centro.objects.get(pk=620),
+            acepta_terminos=True,
+            motivo="consulta medica",
+            detalle_motivo="dolor de garganta",
+            priorizacion_solicitud="BAJA",
+            puntaje_prioridad=0,
+        )
+        gestion = GestionHistorica.objects.create(
+            solicitud=solicitud,
+            decision="ACEPTADA",
+            prioridad_clinica="MEDIA",
+            decidido_por=usuario,
+            fecha_decision=timezone.now(),
+        )
+        contacto = TokenContactoGestion.objects.create(
+            gestion=gestion,
+            token=token,
+            accion="NO_CONTESTA",
+        )
+        return gestion, contacto
+
+    def test_backfill_conserva_fecha_original_del_token(self):
+        gestion, contacto = self._crear_gestion_con_token()
+        fecha_original = timezone.now() - timedelta(days=3, hours=2)
+        type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        RegistroContactoHistorico = apps.get_model("gestion", "RegistroContacto")
+
+        registro = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
+        self.assertEqual(registro.creado_en, fecha_original)
+
+    def test_reverse_backfill_no_borra_registros_ambiguos(self):
+        gestion, contacto = self._crear_gestion_con_token()
+        fecha_original = timezone.now() - timedelta(days=3)
+        type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        RegistroContactoHistorico = apps.get_model("gestion", "RegistroContacto")
+        registro_backfill = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
+        registro_legitimo = RegistroContactoHistorico.objects.create(
+            gestion_id=gestion.pk,
+            canal="LLAMADA",
+            resultado="NO_CONTESTA",
+            mensaje="",
+            usuario_id=None,
+        )
+        RegistroContactoHistorico.objects.filter(pk=registro_legitimo.pk).update(
+            creado_en=fecha_original
+        )
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_from)
+
+        ids_restantes = set(
+            RegistroContactoHistorico.objects.filter(gestion_id=gestion.pk).values_list(
+                "pk", flat=True
+            )
+        )
+        self.assertIn(registro_backfill.pk, ids_restantes)
+        self.assertIn(registro_legitimo.pk, ids_restantes)
+
+    def test_reaplicar_backfill_no_duplica_registros_existentes(self):
+        gestion, contacto = self._crear_gestion_con_token()
+        fecha_original = timezone.now() - timedelta(days=2, hours=4)
+        type(contacto).objects.filter(pk=contacto.pk).update(creado_en=fecha_original)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+        apps = self.executor.loader.project_state(self.migrate_to).apps
+        RegistroContactoHistorico = apps.get_model("gestion", "RegistroContacto")
+        registro_original = RegistroContactoHistorico.objects.get(gestion_id=gestion.pk)
+
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_from)
+        self.executor.loader.build_graph()
+        self.executor.migrate(self.migrate_to)
+
+        registros = list(
+            RegistroContactoHistorico.objects.filter(gestion_id=gestion.pk).order_by("pk")
+        )
+        self.assertEqual(len(registros), 1)
+        self.assertEqual(registros[0].pk, registro_original.pk)
+        self.assertEqual(registros[0].creado_en, fecha_original)
 
 
 class CerrarRechazadosCommandTests(TestCase):
@@ -1648,7 +2010,7 @@ class GestionUiHelpersTests(TestCase):
         )
         self.motivo = MotivoRechazo.objects.create(
             nombre="Datos insuficientes",
-            mensaje_paciente="Hola {nombre}, faltan datos para resolver su solicitud.",
+            mensaje_paciente="Faltan datos para resolver su solicitud.",
         )
 
     def _render(self, source, context):
@@ -1718,6 +2080,19 @@ class GestionBaseLayoutTests(TestCase):
         self.assertContains(response, "Cerrar sesion")
 
 
+class GestionDocsTests(TestCase):
+    def test_nota_despliegue_mejoras_ui_documenta_riesgos_operativos(self):
+        path = (
+            Path(__file__).resolve().parent.parent
+            / "docs"
+            / "despliegue-mejoras-ui-seleccion.md"
+        )
+        contenido = path.read_text(encoding="utf-8")
+        self.assertIn("Motivos de rechazo no transformados", contenido)
+        self.assertIn("Historial no reconstruible", contenido)
+        self.assertIn("Bloqueador de popups", contenido)
+
+
 @override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
 class GestionListasUiTests(TestCase):
     def setUp(self):
@@ -1747,7 +2122,7 @@ class GestionListasUiTests(TestCase):
         self.assertContains(response, "Urgente")
         self.assertContains(
             response,
-            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            f'data-detail-url="/selector/{gestion.pk}/?seccion=pendientes"',
             html=False,
         )
         self.assertNotContains(response, "<th>Decision</th>", html=False)
@@ -1868,9 +2243,10 @@ class GestionAccesibilidadMarkupTests(TestCase):
             f'href="/selector/{gestion.pk}/?seccion=pendientes"',
             html=False,
         )
+        # La fila navega a la vista completa del caso, no a un fragmento de modal.
         self.assertContains(
             response,
-            f'data-detail-url="/selector/{gestion.pk}/?fragmento=1&amp;seccion=pendientes"',
+            f'data-detail-url="/selector/{gestion.pk}/?seccion=pendientes"',
             html=False,
         )
 
@@ -1904,23 +2280,28 @@ class GestionAccesibilidadMarkupTests(TestCase):
         )
         self.assertContains(response, '<details class="agenda-box">', html=False)
 
-    def test_js_de_fragmentos_no_reenvia_formularios_y_actualiza_contadores(self):
+    def test_js_navega_por_fila_y_abre_whatsapp_en_pestana_nueva(self):
         javascript = (
             Path(__file__).resolve().parent.parent / "static" / "js" / "gestion.js"
         ).read_text()
-        self.assertNotIn("form.submit()", javascript)
-        self.assertIn("data-selector-counter", javascript)
-        self.assertIn("data-selector-correction", javascript)
-        self.assertIn("dialogRequestInFlight", javascript)
-        self.assertIn("setDialogButtonsDisabled", javascript)
-        self.assertIn("data-dialog-focus", javascript)
-        self.assertIn("data-dialog-error-focus", javascript)
-        self.assertIn("No se pudo guardar. Intente nuevamente.", javascript)
-        submit_fragment = javascript[javascript.index("async function submitFragmentForm") :]
-        self.assertLess(
-            submit_fragment.index("const previousId = dialog"),
-            submit_fragment.index("const response = await fetch"),
-        )
+        # Ya no hay modal: nada de dialog ni de refresco incremental de tabla.
+        self.assertNotIn("showModal", javascript)
+        self.assertNotIn("gestion-dialog", javascript)
+        self.assertNotIn("dialogActionsCount", javascript)
+        self.assertNotIn("refreshSelectorTable", javascript)
+        self.assertNotIn("data-selector-table-region", javascript)
+        self.assertNotIn("data-selector-counter", javascript)
+        self.assertNotIn("data-selector-row-action", javascript)
+        # La fila navega a la vista completa del caso.
+        self.assertIn("data-detail-url", javascript)
+        self.assertIn("window.location.href = row.dataset.detailUrl", javascript)
+        # WhatsApp: pestana nueva antes del fetch, registro por fragmento y URL.
+        self.assertIn("data-whatsapp-form", javascript)
+        self.assertIn('window.open("", "_blank")', javascript)
+        self.assertIn("popup.opener = null", javascript)
+        self.assertIn("fragmento=1", javascript)
+        self.assertIn("dataset.whatsappUrl", javascript)
+        self.assertIn("response.redirected", javascript)
 
     def test_fragmentos_terminales_tienen_objetivo_de_foco_neutro(self):
         vacia = Path(__file__).resolve().parent / "templates" / "gestion" / "_cola_selector_vacia.html"
@@ -1967,5 +2348,64 @@ class GestionAccesibilidadMarkupTests(TestCase):
         self.assertContains(
             response,
             f'action="/comunicador/{gestion.pk}/?fragmento=1"',
+            html=False,
+        )
+
+    def test_base_expone_sprite_svg_de_iconos_de_gestion(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, '<svg aria-hidden="true" focusable="false" class="icon-sprite"', html=False)
+        for symbol_id in (
+            "ic-check",
+            "ic-x",
+            "ic-minus",
+            "ic-calendar",
+            "ic-phone",
+            "ic-whatsapp",
+        ):
+            self.assertContains(response, f'id="{symbol_id}"', html=False)
+
+    def test_botones_de_selector_tienen_icono_texto_y_clase_de_accion(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, 'class="btn--confirmar"', html=False)
+        self.assertContains(response, '<use href="#ic-check"></use>', html=False)
+        self.assertContains(response, 'class="btn--rechazar"', html=False)
+        self.assertContains(response, '<use href="#ic-x"></use>', html=False)
+        self.assertContains(response, 'class="btn--neutro"', html=False)
+        self.assertContains(response, '<use href="#ic-minus"></use>', html=False)
+        self.assertContains(response, "Aceptar Urgente")
+        self.assertContains(response, "Confirmar rechazo")
+        self.assertContains(response, "No aplica")
+
+    def test_encabezado_de_modal_selector_muestra_identidad_vertical(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        response = self.client.get(
+            f"/selector/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(response, '<dl class="modal-identity">', html=False)
+        self.assertContains(response, "<dt>RUT</dt>", html=False)
+        self.assertContains(response, "<dt>Telefono</dt>", html=False)
+        self.assertContains(response, "<dt>Centro</dt>", html=False)
+
+    def test_encabezado_de_modal_comunicador_omite_rut_y_destaca_telefono(self):
+        gestion = crear_solicitud_base(centro_salud=self.centro).gestion
+        gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        response = self.client.get(
+            f"/comunicador/{gestion.pk}/?fragmento=1",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertContains(
+            response,
+            '<dl class="modal-identity modal-identity--contacto">',
+            html=False,
+        )
+        self.assertNotContains(response, "<dt>RUT</dt>", html=False)
+        self.assertContains(
+            response,
+            f'href="tel:{gestion.solicitud.telefono}"',
             html=False,
         )

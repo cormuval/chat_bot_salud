@@ -12,6 +12,7 @@
   --ok: #166534;
   --warn: #b45309;
   --danger: #b91c1c;
+  --wsp: #0d7d6f;
   --info: #0369a1;
   --prio-urgente: #b91c1c;
   --prio-alta: #c2410c;
@@ -26,6 +27,12 @@
 
 * { box-sizing: border-box; }
 
+html { overscroll-behavior-y: none; }
+
+/* Sprite de iconos: fuera del flujo y sin tamano. El atributo hidden no basta
+   en todos los navegadores para un SVG inline y deja una banda vacia arriba. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -34,6 +41,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 14px;
   letter-spacing: 0;
+  overscroll-behavior-y: none;
 }
 
 a { color: var(--primary-700); font-weight: 700; text-decoration: none; }
@@ -67,7 +75,7 @@ button { cursor: pointer; }
 .gestion-nav {
   display: flex;
   gap: var(--space-2);
-  padding: 0 var(--space-5) var(--space-3);
+  padding: var(--space-3) var(--space-5);
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
@@ -141,10 +149,13 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .gestion-dialog::backdrop { background: rgba(15, 23, 42, 0.42); }
-.modal-panel { max-height: calc(100vh - 32px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--surface); }
-.modal-header, .modal-actions { padding: var(--space-4); border-bottom: 1px solid var(--line); display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
+.modal-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--soft-shadow); overflow: hidden; }
+.modal-header, .modal-actions { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; }
 .modal-actions { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; background: var(--surface); flex-wrap: wrap; }
-.modal-body { padding: var(--space-4); overflow: auto; display: grid; gap: var(--space-4); }
+.modal-body { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-3); }
+.modal-body > section { display: grid; gap: var(--space-1); }
+.modal-body h3 { margin: 0; }
+.modal-body > section > p { margin: 0; }
 .detail-grid { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--space-2) var(--space-4); }
 .detail-grid dt { color: var(--muted); font-weight: 700; }
 .detail-grid dd { margin: 0; }
@@ -158,7 +169,7 @@ button { cursor: pointer; }
 @media (max-width: 900px) {
   .gestion-header { grid-template-columns: 1fr; padding: var(--space-3); }
   .session-box { justify-content: flex-start; }
-  .gestion-nav { padding: 0 var(--space-3) var(--space-3); overflow-x: auto; }
+  .gestion-nav { padding: var(--space-3); overflow-x: auto; }
   .gestion-main { width: min(100% - 20px, 1280px); padding: var(--space-3) 0; }
   .data-table, .data-table thead, .data-table tbody, .data-table tr, .data-table th, .data-table td { display: block; }
   .data-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -166,13 +177,15 @@ button { cursor: pointer; }
   .data-table td { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--space-2); border-bottom: 1px solid var(--line); }
   .data-table td::before { content: attr(data-label); color: var(--muted); font-weight: 700; }
   .truncate { white-space: normal; }
-  .gestion-dialog { width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; }
-  .modal-panel { max-height: 100vh; }
   .detail-grid { grid-template-columns: 1fr; }
 }
 
 button,
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -192,14 +205,55 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
+.icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+.btn--confirmar {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: #fff;
+}
+.btn--agendar {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+.btn--whatsapp {
+  border-color: var(--wsp);
+  background: var(--wsp);
+  color: #fff;
+}
+.btn--rechazar {
+  border-color: var(--danger);
+  background: var(--surface);
+  color: var(--danger);
+}
+.btn--neutro {
+  border-color: var(--muted);
+  background: var(--surface);
+  color: var(--muted);
+}
+.modal-header { align-items: start; }
+.modal-header h2 { margin: 0 0 var(--space-2); }
+.modal-identity { margin: 0; display: grid; gap: 4px; }
+.modal-identity div { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: var(--space-2); }
+.modal-identity dt { color: var(--muted); font-weight: 800; }
+.modal-identity dd { margin: 0; }
+.modal-identity--contacto dd { font-size: 1.05rem; font-weight: 800; }
 .row-pending td:first-child { border-left: 4px solid var(--primary); }
 .message-preview {
-  padding: var(--space-3);
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fafc;
-  line-height: 1.5;
+  line-height: 1.4;
 }
+.message-preview p { margin: 0; }
+.message-preview .muted { font-style: italic; }
 .reject-box {
   padding: 0 var(--space-2);
 }
@@ -216,6 +270,52 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fafc;
+}
+.whatsapp-editor {
+  display: grid;
+  gap: var(--space-2);
+  width: min(100%, 42rem);
+}
+
+.whatsapp-editor span {
+  font-weight: 800;
+}
+
+.whatsapp-editor textarea {
+  width: 100%;
+  min-height: 3.2rem;
+  resize: vertical;
+}
+.contact-history {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-2);
+}
+
+.contact-history summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.history-table {
+  width: 100%;
+  margin-top: var(--space-2);
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.history-message {
+  display: inline-block;
+  max-width: 28rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @media (max-width: 900px) {
   .modal-actions {

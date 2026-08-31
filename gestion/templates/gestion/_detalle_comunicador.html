@@ -1,9 +1,15 @@
 {% load gestion_ui %}
-<article class="modal-panel" data-fragment-kind="comunicador-detail" data-current-row-id="{{ gestion.pk }}">
+<article class="modal-panel" data-fragment-kind="comunicador-detail" data-current-row-id="{{ gestion.pk }}"{% if whatsapp_url %} data-whatsapp-url="{{ whatsapp_url }}"{% endif %}>
   <header class="modal-header">
     <div>
       <h2 data-dialog-focus tabindex="-1">{{ gestion.solicitud.nombre }}</h2>
-      <p><a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a> - {{ gestion.solicitud.centro_salud }}</p>
+      <dl class="modal-identity modal-identity--contacto">
+        <div>
+          <dt>Telefono</dt>
+          <dd><a href="tel:{{ gestion.solicitud.telefono }}">{{ gestion.solicitud.telefono }}</a></dd>
+        </div>
+        <div><dt>Centro</dt><dd>{{ gestion.solicitud.centro_salud }}</dd></div>
+      </dl>
     </div>
     {% if es_fragmento %}<button type="button" class="icon-button" data-dialog-close aria-label="Cerrar">x</button>{% endif %}
   </header>
@@ -31,10 +37,47 @@
         <dt>Motivo de cierre</dt><dd>{{ gestion.get_motivo_cierre_display|default:"Abierto" }}</dd>
       </dl>
     </section>
+    <details class="contact-history" open>
+      <summary>Historial de comunicaciones ({{ registros_contacto|length }})</summary>
+      {% if registros_contacto %}
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Canal</th>
+              <th>Resultado</th>
+              <th>Usuario</th>
+              <th>Mensaje</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for registro in registros_contacto %}
+              <tr>
+                <td><time title="{{ registro.creado_en }}">{{ registro.creado_en|date:"d/m H:i" }}</time></td>
+                <td>{{ registro.get_canal_display }}</td>
+                <td>{{ registro.get_resultado_display }}</td>
+                <td>{% if registro.usuario %}{{ registro.usuario.email|default:registro.usuario.username }}{% else %}Sin usuario{% endif %}</td>
+                <td>{% if registro.mensaje %}<span class="history-message">{{ registro.mensaje }}</span>{% else %}-{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">Sin comunicaciones registradas.</p>
+      {% endif %}
+    </details>
     <section>
-      <h3>Vista previa de WhatsApp</h3>
+      <h3>Mensaje de WhatsApp</h3>
       {% if gestion|telefono_whatsapp_valido %}
-        <p class="message-preview">{{ gestion|mensaje_whatsapp_previo }}</p>
+        <div class="message-preview">
+          <p>Hola, {{ gestion.solicitud.nombre }}. Somos del {{ gestion.solicitud.centro_salud }}.</p>
+          {% if puede_escribir %}
+            <p class="muted">El cuerpo se puede editar antes de abrir WhatsApp.</p>
+          {% else %}
+            <p>{{ gestion|cuerpo_whatsapp_previo }}</p>
+          {% endif %}
+          <p>Muchas gracias.</p>
+        </div>
       {% else %}
         <p class="danger-text">Telefono invalido para WhatsApp</p>
       {% endif %}
@@ -50,16 +93,36 @@
           <summary>Agendar cita</summary>
           {{ form.fecha_hora_citacion }}
           {% if form.fecha_hora_citacion.errors %}<div data-dialog-error-focus tabindex="-1">{{ form.fecha_hora_citacion.errors }}</div>{% endif %}
-          <button type="submit" name="accion" value="AGENDADA">Agendada</button>
+          <button class="btn--agendar" type="submit" name="accion" value="AGENDADA">
+            <svg class="icon" aria-hidden="true"><use href="#ic-calendar"></use></svg>
+            Agendada
+          </button>
         </details>
-        <button type="submit" name="accion" value="NO_ACEPTA">El paciente no acepta</button>
-        <button type="submit" name="accion" value="NO_CONTESTA">No contesta</button>
-        <button type="submit" name="accion" value="NO_CONTACTADO">No se logro contactar</button>
+        <button class="btn--rechazar" type="submit" name="accion" value="NO_ACEPTA">
+          <svg class="icon" aria-hidden="true"><use href="#ic-x"></use></svg>
+          El paciente no acepta
+        </button>
+        <button class="btn--neutro" type="submit" name="accion" value="NO_CONTESTA">
+          <svg class="icon" aria-hidden="true"><use href="#ic-phone"></use></svg>
+          No contesta
+        </button>
+        <button class="btn--rechazar" type="submit" name="accion" value="NO_CONTACTADO">
+          <svg class="icon" aria-hidden="true"><use href="#ic-x"></use></svg>
+          No se logro contactar
+        </button>
       </form>
-      <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}" data-whatsapp-form>
+      <form method="post" action="{% url 'gestion:whatsapp' gestion.pk %}{% if es_fragmento %}?fragmento=1{% endif %}" data-whatsapp-form>
         {% csrf_token %}
+        <label class="whatsapp-editor">
+          <span>Cuerpo del mensaje</span>
+          {{ form_whatsapp.cuerpo }}
+        </label>
+        {% if form_whatsapp.cuerpo.errors %}<div data-dialog-error-focus tabindex="-1">{{ form_whatsapp.cuerpo.errors }}</div>{% endif %}
         {{ form_whatsapp.token_contacto }}
-        <button type="submit" {% if not gestion|telefono_whatsapp_valido %}disabled{% endif %}>Abrir WhatsApp y registrar intento</button>
+        <button class="btn--whatsapp" type="submit" {% if not gestion|telefono_whatsapp_valido %}disabled{% endif %}>
+          <svg class="icon" aria-hidden="true"><use href="#ic-whatsapp"></use></svg>
+          Abrir WhatsApp y registrar intento
+        </button>
       </form>
     {% else %}
       <div class="read-only-trace">

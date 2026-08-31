@@ -1,6 +1,4 @@
-import re
 from datetime import timedelta
-from urllib.parse import quote_plus
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -83,7 +81,12 @@ class PerfilUsuario(models.Model):
 
 class MotivoRechazo(models.Model):
     nombre = models.CharField(max_length=120)
-    mensaje_paciente = models.TextField()
+    mensaje_paciente = models.TextField(
+        help_text=(
+            "Solo el cuerpo. El saludo con el nombre, el centro y el cierre "
+            "los agrega el sistema."
+        )
+    )
     activo = models.BooleanField(default=True)
     orden = models.PositiveSmallIntegerField(default=0)
 
@@ -95,6 +98,38 @@ class MotivoRechazo(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class PlantillaWhatsapp(models.Model):
+    clave = models.CharField(max_length=32, unique=True)
+    descripcion = models.CharField(max_length=120)
+    cuerpo = models.TextField(
+        help_text=(
+            "Solo el cuerpo. El saludo con el nombre, el centro y el cierre "
+            "los agrega el sistema."
+        )
+    )
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "gestion_plantilla_whatsapp"
+        ordering = ["clave"]
+        verbose_name = "plantilla de WhatsApp"
+        verbose_name_plural = "plantillas de WhatsApp"
+
+    def __str__(self):
+        return self.descripcion
+
+    @classmethod
+    def obtener_cuerpo_activo(cls, clave):
+        plantilla = cls.objects.filter(clave=clave, activo=True).first()
+        if plantilla:
+            return plantilla.cuerpo
+        return (
+            "Estamos intentando comunicarnos con usted para gestionar la "
+            "asignacion de una hora de atencion de morbilidad. Por favor, "
+            "responda este mensaje para continuar con la gestion."
+        )
 
 
 class GestionQuerySet(QuerySet):
@@ -498,6 +533,7 @@ class Gestion(models.Model):
         fecha_hora_citacion=None,
         registrar_whatsapp=False,
         token_contacto="",
+        mensaje="",
     ):
         def mutar(gestion):
             ahora = timezone.now()
@@ -526,6 +562,13 @@ class Gestion(models.Model):
                     token=token_contacto,
                     accion=accion,
                 )
+            RegistroContacto.objects.create(
+                gestion=gestion,
+                canal=RegistroContacto.canal_para_accion(accion),
+                resultado=accion,
+                mensaje=mensaje if accion == self.AccionContacto.WHATSAPP else "",
+                usuario=usuario,
+            )
             gestion.intentos_contacto += 1
             gestion.fecha_ultimo_intento = ahora
             gestion.contactado_por = usuario
@@ -560,12 +603,13 @@ class Gestion(models.Model):
             token_contacto=token_contacto,
         )
 
-    def registrar_click_whatsapp(self, usuario, token_contacto=""):
+    def registrar_click_whatsapp(self, usuario, token_contacto="", mensaje=""):
         return self._registrar_intento(
             usuario,
             self.AccionContacto.WHATSAPP,
             registrar_whatsapp=True,
             token_contacto=token_contacto,
+            mensaje=mensaje,
         )
 
     def registrar_agendada(self, usuario, fecha_hora, token_contacto=""):
@@ -625,19 +669,10 @@ class Gestion(models.Model):
             ["cerrada_en", "motivo_cierre"],
         )
 
-    def url_whatsapp(self):
-        telefono = self.solicitud.telefono
-        if not re.fullmatch(r"\+569\d{8}", telefono):
-            return None
-        if self.motivo_rechazo_id:
-            mensaje_base = self.motivo_rechazo.mensaje_paciente
-        else:
-            mensaje_base = (
-                "Hola {nombre}, le contactamos desde su centro de salud por su "
-                "solicitud de morbilidad."
-            )
-        mensaje = mensaje_base.replace("{nombre}", self.solicitud.nombre)
-        return f"https://wa.me/{telefono.removeprefix('+')}?text={quote_plus(mensaje)}"
+    def url_whatsapp(self, cuerpo=None):
+        from .mensajes import url_whatsapp_para_gestion
+
+        return url_whatsapp_para_gestion(self, cuerpo=cuerpo)
 
 
 class TokenContactoGestion(models.Model):
@@ -660,3 +695,44 @@ class TokenContactoGestion(models.Model):
         ]
         verbose_name = "token de contacto"
         verbose_name_plural = "tokens de contacto"
+
+
+class RegistroContacto(models.Model):
+    class Canal(models.TextChoices):
+        LLAMADA = "LLAMADA", "Llamada telefonica"
+        WHATSAPP = "WHATSAPP", "WhatsApp"
+
+    gestion = models.ForeignKey(
+        Gestion,
+        on_delete=models.CASCADE,
+        related_name="registros_contacto",
+    )
+    canal = models.CharField(max_length=10, choices=Canal.choices)
+    resultado = models.CharField(max_length=20, choices=Gestion.AccionContacto.choices)
+    mensaje = models.TextField(blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="registros_contacto_gestion",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "gestion_registro_contacto"
+        ordering = ["-creado_en", "-pk"]
+        indexes = [
+            models.Index(fields=["gestion", "-creado_en"], name="gestion_reg_contacto_idx"),
+        ]
+        verbose_name = "registro de contacto"
+        verbose_name_plural = "registros de contacto"
+
+    def __str__(self):
+        return f"{self.gestion_id} {self.get_canal_display()} {self.get_resultado_display()}"
+
+    @classmethod
+    def canal_para_accion(cls, accion):
+        if accion == Gestion.AccionContacto.WHATSAPP:
+            return cls.Canal.WHATSAPP
+        return cls.Canal.LLAMADA

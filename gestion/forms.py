@@ -4,6 +4,7 @@ from django import forms
 
 from solicitudes.models import Solicitud
 
+from .mensajes import cuerpo_whatsapp_para_gestion
 from .models import Gestion, MotivoRechazo
 
 
@@ -104,13 +105,30 @@ class AccionComunicadorForm(forms.Form):
 
 
 class WhatsappComunicadorForm(forms.Form):
+    cuerpo = forms.CharField(
+        max_length=800,
+        required=True,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        error_messages={
+            "required": "Debe escribir el cuerpo del mensaje.",
+            "max_length": "El cuerpo no puede superar 800 caracteres.",
+        },
+    )
     token_contacto = forms.CharField(
         max_length=128,
         required=False,
         widget=forms.HiddenInput,
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, gestion=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if gestion is not None and not self.is_bound and not self.initial.get("cuerpo"):
+            self.initial["cuerpo"] = cuerpo_whatsapp_para_gestion(gestion)
         if not self.is_bound and not self.initial.get("token_contacto"):
             self.initial["token_contacto"] = secrets.token_urlsafe(16)
+
+    def clean_cuerpo(self):
+        cuerpo = " ".join(self.cleaned_data["cuerpo"].split())
+        if not cuerpo:
+            raise forms.ValidationError("Debe escribir el cuerpo del mensaje.")
+        return cuerpo
