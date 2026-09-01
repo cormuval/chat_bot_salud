@@ -29,6 +29,10 @@ def terminos(request):
     return render(request, "chat/terminos.html")
 
 
+def pagina_no_encontrada(request, exception):
+    return render(request, "404.html", status=404)
+
+
 def _json_body(request):
     try:
         return json.loads(request.body.decode("utf-8"))

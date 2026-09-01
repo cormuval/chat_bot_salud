@@ -49,6 +49,11 @@
       validate: minLength("Describe el motivo de consulta con al menos 3 caracteres.", 3),
     },
     {
+      field: "acepta_terminos",
+      prompt: "Antes de continuar, debes aceptar los Terminos y Condiciones de uso de la plataforma.",
+      type: "terms",
+    },
+    {
       field: "detalle_sintomas",
       prompt: `Gracias. Para ayudarte mejor, cuéntanos un poco más:
 * ¿Qué síntomas tienes?
@@ -181,11 +186,6 @@
         if (text.length > 50) return "El detalle debe tener maximo 50 caracteres.";
         return null;
       },
-    },
-    {
-      field: "acepta_terminos",
-      prompt: "Antes de continuar, debes aceptar los Terminos y Condiciones de uso de la plataforma.",
-      type: "terms",
     },
   ];
 
@@ -545,7 +545,7 @@
       }
 
       addMessage(
-        `Solicitud registrada correctamente.<br><br><strong>ID de solicitud:</strong> ${result.id_solicitud}<br><strong>Nombre:</strong> ${escapeHtml(result.resumen.nombre)}<br><strong>RUT:</strong> ${escapeHtml(result.resumen.rut)}<br><strong>Centro de salud:</strong> ${escapeHtml(result.resumen.centro_salud_nombre || state.selectedCentroName)}<br><strong>Edad:</strong> ${escapeHtml(result.resumen.edad)}`,
+        `Solicitud registrada correctamente.<br><br><strong>ID de solicitud:</strong> ${result.id_solicitud}<br><strong>Nombre:</strong> ${escapeHtml(result.resumen.nombre)}<br><strong>RUT:</strong> ${escapeHtml(result.resumen.rut)}<br><strong>Centro de salud:</strong> ${escapeHtml(result.resumen.centro_salud_nombre || state.selectedCentroName)}<br><strong>Edad:</strong> ${escapeHtml(result.resumen.edad)}<div class="success-notice"><strong class="success-notice__title">Importante</strong><p>Su solicitud será revisada por un profesional clínico durante el día. Una vez evaluada, le informaremos si se le asignará una hora de atención médica o si deberá realizar una nueva solicitud al día siguiente.</p></div>`,
         "bot",
         { html: true }
       );
