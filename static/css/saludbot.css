@@ -30,6 +30,23 @@ body {
   font-size: 16px;
 }
 
+.error-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: #071B33;
+}
+
+.error-page__content {
+  width: 100%;
+}
+
+.error-page__content img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 button,
 input {
   font: inherit;
@@ -272,6 +289,31 @@ input {
 
 .summary__item span {
   color: var(--muted);
+}
+
+.success-notice {
+  margin-top: 16px;
+  padding: 15px 16px;
+  border: 2px solid #38BDF8;
+  border-left: 7px solid var(--primary);
+  border-radius: 8px;
+  background: #E0F2FE;
+  color: #0C4A6E;
+  font-weight: 700;
+  line-height: 1.45;
+  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.16);
+}
+
+.success-notice__title {
+  display: block;
+  margin-bottom: 6px;
+  color: #075985;
+  font-size: 1rem;
+}
+
+.success-notice p {
+  margin: 0;
+  font-weight: 800;
 }
 
 .field-hint {

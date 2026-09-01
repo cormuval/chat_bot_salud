@@ -1,7 +1,9 @@
 import json
+from pathlib import Path
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.conf import settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from .models import Centro, Solicitud
@@ -276,3 +278,38 @@ class DesglosePrioridadTests(TestCase):
                 },
             ],
         )
+
+
+class SaludBotScriptTests(SimpleTestCase):
+    def test_terminos_se_piden_despues_del_aviso_de_urgencia(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        motivo_index = script.index('field: "motivo"')
+        terminos_index = script.index('field: "acepta_terminos"')
+        sintomas_index = script.index('field: "detalle_sintomas"')
+        urgency_index = script.index("function renderUrgencyWarning()")
+        terms_box_index = script.index("function renderTermsAcceptance()")
+
+        self.assertLess(motivo_index, terminos_index)
+        self.assertLess(terminos_index, sintomas_index)
+        self.assertLess(terms_box_index, urgency_index)
+
+    def test_mensaje_final_informa_revision_profesional_destacada(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "Su solicitud será revisada por un profesional clínico durante el día. Una vez evaluada, le informaremos si se le asignará una hora de atención médica o si deberá realizar una nueva solicitud al día siguiente.",
+            script,
+        )
+        self.assertIn("success-notice", script)
+        self.assertIn("success-notice__title", script)
+        self.assertIn("Importante", script)
+
+
+@override_settings(DEBUG=False)
+class ErrorPagesTests(SimpleTestCase):
+    def test_pagina_no_encontrada_muestra_imagen_404(self):
+        response = self.client.get("/ruta-inexistente/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "img/404.webp", status_code=404)
