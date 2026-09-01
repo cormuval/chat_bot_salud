@@ -312,4 +312,4 @@ class ErrorPagesTests(SimpleTestCase):
         response = self.client.get("/ruta-inexistente/")
 
         self.assertEqual(response.status_code, 404)
-        self.assertContains(response, "img/404.png", status_code=404)
+        self.assertContains(response, "img/404.webp", status_code=404)
