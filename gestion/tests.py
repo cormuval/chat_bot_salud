@@ -2489,3 +2489,29 @@ class AdminPanelAccesoTests(TestCase):
         self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO)
         response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 200)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class PerfilesListaTests(TestCase):
+    def setUp(self):
+        self.centro_a = Centro.objects.get(pk=620)
+        self.centro_b = Centro.objects.exclude(pk=620).first()
+
+    def _login(self, rol, centro):
+        u = User.objects.create_user(f"admin-{rol}@cmvalparaiso.cl", email=f"admin-{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=rol, centro=centro)
+        self.client.force_login(u)
+
+    def test_admin_ve_perfiles_de_todos_los_centros(self):
+        otro = User.objects.create_user("otro@cmvalparaiso.cl", email="otro@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=otro, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro_b)
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        response = self.client.get("/perfiles/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "otro@cmvalparaiso.cl")
+
+    def test_supervisor_centro_solo_ve_su_centro(self):
+        otro = User.objects.create_user("otro-b@cmvalparaiso.cl", email="otro-b@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=otro, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro_b)
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        response = self.client.get("/perfiles/", HTTP_HOST="gestion.localhost")
+        self.assertNotContains(response, "otro-b@cmvalparaiso.cl")
