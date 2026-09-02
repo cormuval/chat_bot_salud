@@ -2682,3 +2682,24 @@ class ReportesOperativosTests(TestCase):
         contenido = b"".join(response.streaming_content).decode("utf-8")
         self.assertIn("Luz Vega", contenido)
         self.assertIn("Aceptada", contenido)
+
+    def test_reportes_respetan_aislamiento_por_centro(self):
+        centro_a = Centro.objects.get(pk=620)
+        centro_b = Centro.objects.exclude(pk=620).first()
+        supervisor = User.objects.create_user("sup-a@cmvalparaiso.cl", email="sup-a@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(
+            usuario=supervisor, rol=PerfilUsuario.Rol.SUPERVISOR_CENTRO, centro=centro_a
+        )
+        actor = User.objects.create_user("actor-rep@cmvalparaiso.cl", email="actor-rep@cmvalparaiso.cl")
+        for centro, nombre in ((centro_a, "Ana EnCentroA"), (centro_b, "Beto EnCentroB")):
+            sol = crear_solicitud_base(centro_salud=centro, nombre=nombre)
+            g = sol.gestion
+            g.aceptar(actor, Solicitud.Prioridad.MEDIA)
+            g.registrar_no_contesta(actor, token_contacto=f"tok-{sol.pk}")
+        self.client.force_login(supervisor)
+        rango = "?desde=2000-01-01&hasta=2100-01-01"
+        for url in ("/reportes/solicitudes/", "/reportes/contactabilidad/", "/reportes/gestiones/"):
+            resp = self.client.get(url + rango, HTTP_HOST="gestion.localhost")
+            contenido = b"".join(resp.streaming_content).decode("utf-8")
+            self.assertIn("EnCentroA", contenido, url)
+            self.assertNotIn("EnCentroB", contenido, url)

@@ -8,7 +8,6 @@ from solicitudes.models import Solicitud
 from .forms_admin import PerfilAdminForm
 from .models import Gestion, PerfilUsuario, RegistroContacto
 from .permisos import (
-    centros_administrables,
     es_ultimo_admin_activo,
     obtener_perfil_activo,
     puede_administrar_perfiles,
