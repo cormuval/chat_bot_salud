@@ -2583,3 +2583,45 @@ class PerfilesCrudTests(TestCase):
         )
         p.refresh_from_db()
         self.assertTrue(p.activo)
+
+    def test_supervisor_centro_no_puede_editar_admin_de_su_centro(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        u = User.objects.create_user("adm-a@cmvalparaiso.cl", email="adm-a@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        # Otro admin activo en otro centro: sin esto, la guarda de "ultimo
+        # admin activo" bloquearia el ataque por su cuenta y el test no
+        # distinguiria si lo que protege es esa guarda o la de frontera.
+        otro_admin = User.objects.create_user("adm-b@cmvalparaiso.cl", email="adm-b@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=otro_admin, rol="ADMIN", centro=self.centro_b)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "SELECTOR", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertEqual(p.rol, "ADMIN")
+        self.assertTrue(p.activo)
+
+    def test_no_se_puede_degradar_al_ultimo_admin(self):
+        u = User.objects.create_user("solo-admin2@cmvalparaiso.cl", email="solo-admin2@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        self.client.force_login(u)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "SELECTOR", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertEqual(p.rol, "ADMIN")
+
+    def test_admin_no_ultimo_puede_desactivarse(self):
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        u = User.objects.create_user("admin2@cmvalparaiso.cl", email="admin2@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "ADMIN", "centro": self.centro_a.pk},
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertFalse(p.activo)

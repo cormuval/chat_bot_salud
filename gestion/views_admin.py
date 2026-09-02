@@ -79,6 +79,11 @@ def perfil_editar(request, pk):
     objetivo = _perfiles_del_alcance(editor).filter(pk=pk).first()
     if objetivo is None:
         return redirect("gestion:perfiles_lista")
+    # Guarda de frontera: el editor tampoco puede operar sobre un perfil cuyo
+    # rol o centro ACTUAL este fuera de su alcance. Sin esto, un supervisor de
+    # centro podria degradar o desactivar a un admin de su mismo centro.
+    if not _puede_operar_sobre(editor, objetivo.rol, objetivo.centro_id):
+        return redirect("gestion:perfiles_lista")
     # Se calcula antes de instanciar el form: ModelForm.is_valid() muta
     # `objetivo` in-place (es la misma instancia que form.instance) con los
     # datos posteados, asi que despues de is_valid() ya no refleja el estado
