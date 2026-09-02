@@ -2734,3 +2734,16 @@ class PalabrasPrioridadUiTests(TestCase):
         self.assertTrue(
             PalabraClavePrioridad.objects.filter(texto_normalizado="mareo intenso").exists()
         )
+
+    def test_no_permite_palabra_duplicada_ignorando_acentos(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_DAS)
+        from solicitudes.models import PalabraClavePrioridad
+        response = self.client.post(
+            "/palabras-prioridad/nueva/",
+            {"texto": "Fiebre", "nivel": "MODERADA", "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)  # re-render con error, no 500 ni redirect
+        self.assertEqual(
+            PalabraClavePrioridad.objects.filter(texto_normalizado="fiebre").count(), 1
+        )
