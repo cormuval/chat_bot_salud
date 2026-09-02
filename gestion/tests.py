@@ -207,7 +207,7 @@ class HostRoutingTests(TestCase):
         # que el host de gestion esta usando ese urlconf y no el del chatbot.
         response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("no tiene acceso", response.content.decode("utf-8").lower())
+        self.assertIn("permisos", response.content.decode("utf-8").lower())
 
     def test_host_default_resuelve_chatbot(self):
         response = self.client.get("/", HTTP_HOST="testserver")
@@ -391,7 +391,7 @@ class RutasDeLoginTests(TestCase):
     def test_sin_acceso_responde_200(self):
         response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("no tiene acceso", response.content.decode("utf-8").lower())
+        self.assertIn("permisos", response.content.decode("utf-8").lower())
 
     def test_logout_por_get_no_esta_permitido(self):
         # mozilla-django-oidc solo cierra sesion por POST; por GET responde 405.
@@ -419,7 +419,7 @@ class RutasDeLoginTests(TestCase):
         response = self.client.post("/oidc/logout/", HTTP_HOST="gestion.localhost")
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/sin-acceso/")
+        self.assertEqual(response["Location"], "/login/")
         self.assertNotIn("_auth_user_id", self.client.session)
 
 
@@ -2437,3 +2437,13 @@ class AccesoLoginTests(TestCase):
     def test_login_no_muestra_navegacion(self):
         response = self.client.get("/login/", HTTP_HOST="gestion.localhost")
         self.assertNotContains(response, 'aria-label="Navegacion principal"', html=False)
+
+    def test_logout_redirige_al_login(self):
+        from django.conf import settings
+        self.assertEqual(settings.LOGOUT_REDIRECT_URL, "/login/")
+
+    def test_sin_acceso_ofrece_cerrar_sesion(self):
+        response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/oidc/logout/", html=False)
+        self.assertContains(response, "permisos", html=False)

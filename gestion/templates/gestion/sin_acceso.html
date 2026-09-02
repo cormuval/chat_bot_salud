@@ -1,6 +1,13 @@
 {% extends "gestion/base.html" %}
 {% block title %}Sin acceso{% endblock %}
 {% block content %}
-<h1>Sin acceso</h1>
-<p>Su cuenta no tiene acceso al modulo de seleccion.</p>
+<section class="auth-card">
+  <h2>Sin acceso</h2>
+  <p>Su cuenta inicio sesion correctamente, pero no tiene permisos habilitados
+     para el modulo de gestion. Si cree que es un error, contacte al administrador.</p>
+  <form method="post" action="{% url 'oidc_logout' %}">
+    {% csrf_token %}
+    <button type="submit">Cerrar sesion y usar otra cuenta</button>
+  </form>
+</section>
 {% endblock %}
