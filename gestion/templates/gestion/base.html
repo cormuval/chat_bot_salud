@@ -49,10 +49,12 @@
         </div>
       {% endif %}
     </header>
+    {% if perfil %}
     <nav class="gestion-nav" aria-label="Navegacion principal">
       <a href="{% url 'gestion:selector_lista' %}">Selector</a>
       <a href="{% url 'gestion:comunicador_lista' %}">Comunicador</a>
     </nav>
+    {% endif %}
     <main class="gestion-main">
       {% for message in messages %}
         <p class="status-badge">{{ message }}</p>

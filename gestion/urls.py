@@ -7,6 +7,7 @@ app_name = "gestion"
 urlpatterns = [
     path("", views.panel, name="panel"),
     path("sin-acceso/", views.sin_acceso, name="sin_acceso"),
+    path("login/", views.login, name="login"),
     path("selector/", views.selector_lista, name="selector_lista"),
     path("selector/<int:pk>/", views.selector_detalle, name="selector_detalle"),
     path("comunicador/", views.comunicador_lista, name="comunicador_lista"),

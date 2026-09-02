@@ -1,0 +1,11 @@
+{% extends "gestion/base.html" %}
+{% block title %}Iniciar sesion{% endblock %}
+{% block content %}
+<section class="auth-card">
+  <h2>Iniciar sesion</h2>
+  <p>Acceda con su cuenta institucional de Google para usar el modulo.</p>
+  <a class="button btn--confirmar" href="{% url 'oidc_authentication_init' %}{% if next %}?next={{ next|urlencode:"" }}{% endif %}">
+    Iniciar sesion con Google
+  </a>
+</section>
+{% endblock %}

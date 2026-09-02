@@ -172,7 +172,7 @@ OIDC_AUTH_REQUEST_EXTRA_PARAMS = {
     "prompt": "select_account",
 }
 
-LOGIN_URL = "oidc_authentication_init"
+LOGIN_URL = "gestion:login"
 LOGIN_REDIRECT_URL = "/"
 LOGIN_REDIRECT_URL_FAILURE = "/sin-acceso/"
 LOGOUT_REDIRECT_URL = "/sin-acceso/"

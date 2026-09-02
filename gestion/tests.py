@@ -431,7 +431,7 @@ class PanelRequiereLoginTests(TestCase):
     def test_anonimo_es_redirigido_al_login(self):
         response = self.client.get("/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/oidc/authenticate/", response["Location"])
+        self.assertIn("/login/", response["Location"])
 
     def test_usuario_con_perfil_va_a_cola_selector(self):
         usuario = User.objects.create_user(
@@ -2409,3 +2409,31 @@ class GestionAccesibilidadMarkupTests(TestCase):
             f'href="tel:{gestion.solicitud.telefono}"',
             html=False,
         )
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class AccesoLoginTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+
+    def test_sin_sesion_una_ruta_protegida_redirige_al_login(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/login/?next=/selector/")
+
+    def test_login_muestra_boton_de_google_con_next(self):
+        response = self.client.get("/login/?next=/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/oidc/authenticate/", html=False)
+        self.assertContains(response, "next=%2Fselector%2F", html=False)
+
+    def test_login_descarta_next_con_host_externo(self):
+        response = self.client.get(
+            "/login/?next=https://malicioso.example/x", HTTP_HOST="gestion.localhost"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "malicioso.example", html=False)
+
+    def test_login_no_muestra_navegacion(self):
+        response = self.client.get("/login/", HTTP_HOST="gestion.localhost")
+        self.assertNotContains(response, 'aria-label="Navegacion principal"', html=False)

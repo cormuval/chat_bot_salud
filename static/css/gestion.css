@@ -332,3 +332,18 @@ button:disabled {
     width: 100%;
   }
 }
+
+.auth-card {
+  max-width: 32rem;
+  margin: var(--space-5) auto;
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+.auth-card h2 { margin: 0; }
+.auth-card p { margin: 0; color: var(--muted); }

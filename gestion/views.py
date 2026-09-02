@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
@@ -111,6 +112,23 @@ def panel(request):
 
 def sin_acceso(request):
     return render(request, "gestion/sin_acceso.html")
+
+
+def login(request):
+    """Pagina de entrada del modulo: un boton para iniciar sesion con Google.
+    Si el usuario ya tiene sesion y perfil, salta directo al panel. Preserva
+    'next' validado contra el host actual para volver a la ruta pedida."""
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is not None:
+        return redirect("gestion:panel")
+    next_url = request.GET.get("next", "")
+    if not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = ""
+    return render(request, "gestion/login.html", {"next": next_url})
 
 
 @login_required
