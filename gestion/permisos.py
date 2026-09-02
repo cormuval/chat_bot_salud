@@ -81,7 +81,10 @@ def centros_administrables(perfil):
 
 
 def puede_editar_palabras_prioridad(perfil):
-    return perfil.rol == PerfilUsuario.Rol.SUPERVISOR_DAS
+    return perfil.rol in {
+        PerfilUsuario.Rol.ADMIN,
+        PerfilUsuario.Rol.SUPERVISOR_DAS,
+    }
 
 
 def es_ultimo_admin_activo(perfil):
