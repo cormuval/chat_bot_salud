@@ -3,11 +3,13 @@ from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.conf import settings
+from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from .models import Centro, Solicitud
+from .models import Centro, PalabraClavePrioridad, Solicitud
 from .priorizacion import calcular_prioridad, desglosar_prioridad
+from .texto import normalizar
 from .validators import formatear_telefono_con_codigo_pais, validar_rut_chileno, validar_telefono_chileno
 
 
@@ -313,3 +315,18 @@ class ErrorPagesTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, "img/404.webp", status_code=404)
+
+
+class PalabraClavePrioridadModeloTests(TestCase):
+    def test_normalizar_quita_acentos_y_mayusculas(self):
+        self.assertEqual(normalizar("Convulsión"), "convulsion")
+        self.assertEqual(normalizar("  FIEBRE "), "fiebre")
+
+    def test_guardar_calcula_texto_normalizado(self):
+        p = PalabraClavePrioridad.objects.create(texto="Convulsión", nivel="URGENTE")
+        self.assertEqual(p.texto_normalizado, "convulsion")
+
+    def test_unicidad_por_forma_normalizada(self):
+        PalabraClavePrioridad.objects.create(texto="Fiebre", nivel="MODERADA")
+        with self.assertRaises(IntegrityError):
+            PalabraClavePrioridad.objects.create(texto="fiebre", nivel="MODERADA")

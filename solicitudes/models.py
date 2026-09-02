@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from .texto import normalizar
 from .validators import (
     formatear_rut_sin_puntos,
     formatear_telefono_con_codigo_pais,
@@ -121,3 +122,27 @@ class Solicitud(models.Model):
 
         if self.Neurodivergente_prais_gestante_tipo != self.TipoCondicion.OTRO:
             self.Neurodivergente_prais_gestante_otro = ""
+
+
+class PalabraClavePrioridad(models.Model):
+    class Nivel(models.TextChoices):
+        URGENTE = "URGENTE", "Urgente"
+        MODERADA = "MODERADA", "Moderada"
+
+    texto = models.CharField(max_length=120)
+    texto_normalizado = models.CharField(max_length=120, unique=True, editable=False)
+    nivel = models.CharField(max_length=10, choices=Nivel.choices)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "solicitudes_palabra_clave_prioridad"
+        ordering = ["nivel", "texto_normalizado"]
+        verbose_name = "palabra clave de prioridad"
+        verbose_name_plural = "palabras clave de prioridad"
+
+    def __str__(self):
+        return f"{self.texto} ({self.get_nivel_display()})"
+
+    def save(self, *args, **kwargs):
+        self.texto_normalizado = normalizar(self.texto)
+        super().save(*args, **kwargs)
