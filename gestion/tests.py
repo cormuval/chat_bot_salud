@@ -30,7 +30,7 @@ from gestion.permisos import (
     puede_usar_selector,
     puede_ver_no_aplica,
 )
-from solicitudes.models import Centro, Solicitud
+from solicitudes.models import Centro, PalabraClavePrioridad, Solicitud
 
 
 def crear_solicitud_base(**overrides):
@@ -2703,3 +2703,47 @@ class ReportesOperativosTests(TestCase):
             contenido = b"".join(resp.streaming_content).decode("utf-8")
             self.assertIn("EnCentroA", contenido, url)
             self.assertNotIn("EnCentroB", contenido, url)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class PalabrasPrioridadUiTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+
+    def _login(self, rol):
+        u = User.objects.create_user(f"p-{rol}@cmvalparaiso.cl", email=f"p-{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=rol, centro=self.centro)
+        self.client.force_login(u)
+
+    def test_solo_supervisor_das_accede(self):
+        self._login(PerfilUsuario.Rol.ADMIN)
+        self.assertEqual(self.client.get("/palabras-prioridad/", HTTP_HOST="gestion.localhost").status_code, 302)
+
+    def test_supervisor_das_ve_lista(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_DAS)
+        self.assertEqual(self.client.get("/palabras-prioridad/", HTTP_HOST="gestion.localhost").status_code, 200)
+
+    def test_supervisor_das_crea_palabra(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_DAS)
+        response = self.client.post(
+            "/palabras-prioridad/nueva/",
+            {"texto": "mareo intenso", "nivel": "URGENTE", "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            PalabraClavePrioridad.objects.filter(texto_normalizado="mareo intenso").exists()
+        )
+
+    def test_no_permite_palabra_duplicada_ignorando_acentos(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_DAS)
+        from solicitudes.models import PalabraClavePrioridad
+        response = self.client.post(
+            "/palabras-prioridad/nueva/",
+            {"texto": "Fiebre", "nivel": "MODERADA", "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)  # re-render con error, no 500 ni redirect
+        self.assertEqual(
+            PalabraClavePrioridad.objects.filter(texto_normalizado="fiebre").count(), 1
+        )

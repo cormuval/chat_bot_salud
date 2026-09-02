@@ -3,14 +3,15 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.shortcuts import redirect, render
 
-from solicitudes.models import Solicitud
+from solicitudes.models import PalabraClavePrioridad, Solicitud
 
-from .forms_admin import PerfilAdminForm
+from .forms_admin import PalabraPrioridadForm, PerfilAdminForm
 from .models import Gestion, PerfilUsuario, RegistroContacto
 from .permisos import (
     es_ultimo_admin_activo,
     obtener_perfil_activo,
     puede_administrar_perfiles,
+    puede_editar_palabras_prioridad,
     puede_ver_reportes,
     roles_asignables,
 )
@@ -206,3 +207,42 @@ def reporte_gestiones(request):
         for g in qs.iterator()
     )
     return exportar_csv("gestiones-selector.csv", encabezados, filas)
+
+
+@login_required
+def palabras_lista(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_editar_palabras_prioridad(perfil):
+        return redirect("gestion:sin_acceso")
+    return render(
+        request,
+        "gestion/palabras_lista.html",
+        {"perfil": perfil, "palabras": PalabraClavePrioridad.objects.all()},
+    )
+
+
+@login_required
+def palabra_crear(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_editar_palabras_prioridad(perfil):
+        return redirect("gestion:sin_acceso")
+    form = PalabraPrioridadForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("gestion:palabras_lista")
+    return render(request, "gestion/palabra_form.html", {"perfil": perfil, "form": form})
+
+
+@login_required
+def palabra_editar(request, pk):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_editar_palabras_prioridad(perfil):
+        return redirect("gestion:sin_acceso")
+    palabra = PalabraClavePrioridad.objects.filter(pk=pk).first()
+    if palabra is None:
+        return redirect("gestion:palabras_lista")
+    form = PalabraPrioridadForm(request.POST or None, instance=palabra)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("gestion:palabras_lista")
+    return render(request, "gestion/palabra_form.html", {"perfil": perfil, "form": form})

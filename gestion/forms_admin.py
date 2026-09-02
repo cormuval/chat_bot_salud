@@ -1,5 +1,8 @@
 from django import forms
 
+from solicitudes.models import PalabraClavePrioridad
+from solicitudes.texto import normalizar
+
 from .models import PerfilUsuario
 from .permisos import centros_administrables, roles_asignables
 
@@ -26,3 +29,21 @@ class PerfilAdminForm(forms.ModelForm):
             ]
             self.fields["centro"].queryset = centros_administrables(perfil_editor)
             self.fields["centro_satelite"].queryset = centros_administrables(perfil_editor)
+
+
+class PalabraPrioridadForm(forms.ModelForm):
+    class Meta:
+        model = PalabraClavePrioridad
+        fields = ["texto", "nivel", "activo"]
+
+    def clean_texto(self):
+        texto = self.cleaned_data["texto"]
+        normalizado = normalizar(texto)
+        existentes = PalabraClavePrioridad.objects.filter(texto_normalizado=normalizado)
+        if self.instance.pk:
+            existentes = existentes.exclude(pk=self.instance.pk)
+        if existentes.exists():
+            raise forms.ValidationError(
+                "Ya existe una palabra equivalente (ignorando acentos y mayusculas)."
+            )
+        return texto

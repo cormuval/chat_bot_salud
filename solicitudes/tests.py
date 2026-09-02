@@ -1,13 +1,16 @@
 import json
 from pathlib import Path
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.conf import settings
+from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from .models import Centro, Solicitud
+from .models import Centro, PalabraClavePrioridad, Solicitud
 from .priorizacion import calcular_prioridad, desglosar_prioridad
+from .texto import normalizar
 from .validators import formatear_telefono_con_codigo_pais, validar_rut_chileno, validar_telefono_chileno
 
 
@@ -313,3 +316,63 @@ class ErrorPagesTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, "img/404.webp", status_code=404)
+
+
+class PalabraClavePrioridadModeloTests(TestCase):
+    def test_normalizar_quita_acentos_y_mayusculas(self):
+        self.assertEqual(normalizar("Convulsión"), "convulsion")
+        self.assertEqual(normalizar("  FIEBRE "), "fiebre")
+
+    def test_guardar_calcula_texto_normalizado(self):
+        p = PalabraClavePrioridad.objects.create(texto="Mareó", nivel="URGENTE")
+        self.assertEqual(p.texto_normalizado, "mareo")
+
+    def test_unicidad_por_forma_normalizada(self):
+        PalabraClavePrioridad.objects.create(texto="Tos", nivel="MODERADA")
+        with self.assertRaises(IntegrityError):
+            PalabraClavePrioridad.objects.create(texto="tos", nivel="MODERADA")
+
+
+class SeedPalabrasPrioridadTests(TestCase):
+    def test_semilla_reproduce_las_palabras_actuales(self):
+        urgentes = set(
+            PalabraClavePrioridad.objects.filter(nivel="URGENTE", activo=True)
+            .values_list("texto_normalizado", flat=True)
+        )
+        self.assertIn("convulsion", urgentes)
+        self.assertIn("dolor pecho", urgentes)
+        self.assertEqual(
+            PalabraClavePrioridad.objects.filter(nivel="URGENTE").count(), 9
+        )
+        self.assertEqual(
+            PalabraClavePrioridad.objects.filter(nivel="MODERADA").count(), 6
+        )
+
+
+class PriorizacionDesdeBDTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
+    def _datos(self, texto):
+        return {"motivo": texto, "detalle_motivo": "", "edad": 30,
+                "credendencial_cuidador_discapacidad": False,
+                "Neurodivergente_prais_gestante": False}
+
+    def test_palabra_activa_sube_la_prioridad(self):
+        # 'convulsion' viene sembrada como URGENTE (+4) => ALTA
+        self.assertEqual(calcular_prioridad(self._datos("convulsion"))["clasificacion"], "ALTA")
+
+    def test_match_ignora_acentos(self):
+        self.assertEqual(calcular_prioridad(self._datos("Convulsión"))["clasificacion"], "ALTA")
+
+    def test_desactivar_palabra_baja_la_prioridad(self):
+        PalabraClavePrioridad.objects.filter(texto_normalizado="convulsion").update(activo=False)
+        cache.clear()
+        self.assertEqual(calcular_prioridad(self._datos("convulsion"))["clasificacion"], "BAJA")
+
+    def test_palabra_nueva_aplica_sin_tocar_codigo(self):
+        PalabraClavePrioridad.objects.create(texto="mareo", nivel="URGENTE")
+        self.assertEqual(calcular_prioridad(self._datos("tengo mareo"))["clasificacion"], "ALTA")

@@ -1,0 +1,11 @@
+{% extends "gestion/base.html" %}
+{% block title %}Palabra de prioridad{% endblock %}
+{% block content %}
+<section class="page-title"><div><h2>Palabra de prioridad</h2></div></section>
+<form method="post" class="admin-form">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn--confirmar" type="submit">Guardar</button>
+  <a class="button" href="{% url 'gestion:palabras_lista' %}">Cancelar</a>
+</form>
+{% endblock %}
