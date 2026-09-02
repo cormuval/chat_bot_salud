@@ -16,11 +16,13 @@ from .models import Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
     obtener_perfil_activo,
+    puede_administrar_perfiles,
     puede_escribir_comunicador,
     puede_escribir_selector,
     puede_usar_comunicador,
     puede_usar_selector,
     puede_ver_no_aplica,
+    puede_ver_reportes,
 )
 
 
@@ -108,6 +110,24 @@ def panel(request):
     if puede_usar_comunicador(perfil):
         return redirect("gestion:comunicador_lista")
     return redirect("gestion:sin_acceso")
+
+
+@login_required
+def admin_panel(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not (
+        puede_administrar_perfiles(perfil) or puede_ver_reportes(perfil)
+    ):
+        return redirect("gestion:sin_acceso")
+    return render(
+        request,
+        "gestion/admin_panel.html",
+        {
+            "perfil": perfil,
+            "puede_perfiles": puede_administrar_perfiles(perfil),
+            "puede_reportes": puede_ver_reportes(perfil),
+        },
+    )
 
 
 def sin_acceso(request):

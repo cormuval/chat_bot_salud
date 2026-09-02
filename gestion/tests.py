@@ -2460,3 +2460,32 @@ class Error404GestionTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, "no existe", status_code=404, html=False)
         self.assertTemplateUsed(response, "gestion/404.html")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class AdminPanelAccesoTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+
+    def _login(self, rol):
+        usuario = User.objects.create_user(f"{rol}@cmvalparaiso.cl", email=f"{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=usuario, rol=rol, centro=self.centro)
+        self.client.force_login(usuario)
+        return usuario
+
+    def test_rol_operativo_no_ve_panel(self):
+        self._login(PerfilUsuario.Rol.SELECTOR)
+        response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+
+    def test_admin_ve_panel_con_accesos(self):
+        self._login(PerfilUsuario.Rol.ADMIN)
+        response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Perfiles")
+        self.assertContains(response, "Reportes")
+
+    def test_supervisor_centro_ve_panel(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO)
+        response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)

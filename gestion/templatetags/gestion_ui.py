@@ -3,11 +3,22 @@ from datetime import timedelta
 from django import template
 from django.utils import timezone
 
+from gestion import permisos
 from gestion.models import Gestion
 from solicitudes.priorizacion import desglosar_prioridad
 
 
 register = template.Library()
+
+
+@register.filter
+def puede_administrar(perfil):
+    return bool(perfil) and permisos.puede_administrar_perfiles(perfil)
+
+
+@register.filter
+def puede_ver_reportes(perfil):
+    return bool(perfil) and permisos.puede_ver_reportes(perfil)
 
 
 @register.filter
