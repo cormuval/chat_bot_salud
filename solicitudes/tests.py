@@ -353,6 +353,9 @@ class PriorizacionDesdeBDTests(TestCase):
     def setUp(self):
         cache.clear()
 
+    def tearDown(self):
+        cache.clear()
+
     def _datos(self, texto):
         return {"motivo": texto, "detalle_motivo": "", "edad": 30,
                 "credendencial_cuidador_discapacidad": False,

@@ -4,6 +4,12 @@ from .texto import normalizar
 
 CACHE_PALABRAS = "solicitudes_palabras_prioridad_v1"
 
+# Red de seguridad: aunque las senales invalidan el cache al editar una palabra,
+# LocMemCache es por worker; un TTL corto asegura que cualquier worker que se
+# pierda la senal se auto-sane. Editar palabras es raro, 5 min de desfase es
+# despreciable para el triaje.
+CACHE_PALABRAS_TTL = 300
+
 
 def palabras_por_nivel():
     """Palabras activas agrupadas por nivel, en forma normalizada. Cacheadas;
@@ -17,7 +23,7 @@ def palabras_por_nivel():
             activo=True
         ).values_list("texto_normalizado", "nivel"):
             data.setdefault(nivel, []).append(texto_norm)
-        cache.set(CACHE_PALABRAS, data, None)
+        cache.set(CACHE_PALABRAS, data, CACHE_PALABRAS_TTL)
     return data
 
 
