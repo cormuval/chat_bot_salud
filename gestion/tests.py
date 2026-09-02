@@ -2651,3 +2651,34 @@ class ReporteSolicitudesTests(TestCase):
     def test_sin_rango_no_exporta(self):
         response = self.client.get("/reportes/solicitudes/", HTTP_HOST="gestion.localhost")
         self.assertNotEqual(response.get("Content-Type", ""), "text/csv; charset=utf-8")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ReportesOperativosTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("rep2@cmvalparaiso.cl", email="rep2@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=self.usuario, rol=PerfilUsuario.Rol.ADMIN, centro=self.centro)
+        self.client.force_login(self.usuario)
+        sol = crear_solicitud_base(centro_salud=self.centro, nombre="Luz Vega")
+        self.gestion = sol.gestion
+        self.gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        self.gestion.registrar_no_contesta(self.usuario, token_contacto="t1")
+
+    def test_reporte_contactabilidad(self):
+        response = self.client.get(
+            "/reportes/contactabilidad/?desde=2000-01-01&hasta=2100-01-01",
+            HTTP_HOST="gestion.localhost",
+        )
+        contenido = b"".join(response.streaming_content).decode("utf-8")
+        self.assertIn("Luz Vega", contenido)
+        self.assertIn("No contesta", contenido)
+
+    def test_reporte_gestiones_selector(self):
+        response = self.client.get(
+            "/reportes/gestiones/?desde=2000-01-01&hasta=2100-01-01",
+            HTTP_HOST="gestion.localhost",
+        )
+        contenido = b"".join(response.streaming_content).decode("utf-8")
+        self.assertIn("Luz Vega", contenido)
+        self.assertIn("Aceptada", contenido)

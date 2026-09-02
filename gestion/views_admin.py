@@ -6,7 +6,7 @@ from django.shortcuts import redirect, render
 from solicitudes.models import Solicitud
 
 from .forms_admin import PerfilAdminForm
-from .models import PerfilUsuario
+from .models import Gestion, PerfilUsuario, RegistroContacto
 from .permisos import (
     centros_administrables,
     es_ultimo_admin_activo,
@@ -145,3 +145,65 @@ def reporte_solicitudes(request):
         for s in qs.iterator()
     )
     return exportar_csv("solicitudes.csv", encabezados, filas)
+
+
+def _registros_del_alcance(perfil):
+    qs = RegistroContacto.objects.select_related(
+        "gestion__solicitud__centro_salud", "usuario"
+    ).order_by("creado_en")
+    if perfil.ve_todos_los_centros:
+        return qs
+    return qs.filter(gestion__solicitud__centro_salud__in=perfil.centros_permitidos())
+
+
+@login_required
+def reporte_contactabilidad(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_ver_reportes(perfil):
+        return redirect("gestion:sin_acceso")
+    desde, hasta = rango_fechas(request)
+    if desde is None or hasta is None:
+        messages.error(request, "Indique el rango de fechas (desde y hasta).")
+        return redirect("gestion:reportes")
+    qs = _registros_del_alcance(perfil).filter(creado_en__date__range=(desde, hasta))
+    encabezados = ["Fecha", "Paciente", "RUT", "Centro", "Canal", "Resultado", "Usuario", "Mensaje"]
+    filas = (
+        [
+            r.creado_en.strftime("%Y-%m-%d %H:%M"), r.gestion.solicitud.nombre,
+            r.gestion.solicitud.rut, str(r.gestion.solicitud.centro_salud),
+            r.get_canal_display(), r.get_resultado_display(),
+            r.usuario.email if r.usuario else "", r.mensaje,
+        ]
+        for r in qs.iterator()
+    )
+    return exportar_csv("contactabilidad.csv", encabezados, filas)
+
+
+@login_required
+def reporte_gestiones(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_ver_reportes(perfil):
+        return redirect("gestion:sin_acceso")
+    desde, hasta = rango_fechas(request)
+    if desde is None or hasta is None:
+        messages.error(request, "Indique el rango de fechas (desde y hasta).")
+        return redirect("gestion:reportes")
+    qs = (
+        Gestion.objects.select_related("solicitud__centro_salud", "decidido_por", "motivo_rechazo")
+        .del_alcance(perfil)
+        .filter(fecha_decision__date__range=(desde, hasta))
+        .order_by("fecha_decision")
+    )
+    encabezados = ["Fecha decision", "Paciente", "RUT", "Centro", "Decision",
+                   "Prioridad clinica", "Motivo rechazo", "Decidido por"]
+    filas = (
+        [
+            g.fecha_decision.strftime("%Y-%m-%d %H:%M") if g.fecha_decision else "",
+            g.solicitud.nombre, g.solicitud.rut, str(g.solicitud.centro_salud),
+            g.get_decision_display(), g.get_prioridad_clinica_display() or "",
+            str(g.motivo_rechazo) if g.motivo_rechazo_id else "",
+            g.decidido_por.email if g.decidido_por else "",
+        ]
+        for g in qs.iterator()
+    )
+    return exportar_csv("gestiones-selector.csv", encabezados, filas)
