@@ -2447,3 +2447,16 @@ class AccesoLoginTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "/oidc/logout/", html=False)
         self.assertContains(response, "permisos", html=False)
+
+
+@override_settings(
+    DEBUG=False,
+    ALLOWED_HOSTS=["gestion.localhost", "testserver"],
+    GESTION_HOST="gestion.localhost",
+)
+class Error404GestionTests(TestCase):
+    def test_ruta_inexistente_renderiza_404_del_modulo(self):
+        response = self.client.get("/ruta-que-no-existe-xyz/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "no existe", status_code=404, html=False)
+        self.assertTemplateUsed(response, "gestion/404.html")

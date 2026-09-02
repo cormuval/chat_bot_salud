@@ -114,6 +114,12 @@ def sin_acceso(request):
     return render(request, "gestion/sin_acceso.html")
 
 
+def pagina_no_encontrada(request, exception):
+    """Handler 404 del modulo de gestion. Solo se renderiza con DEBUG=False;
+    con DEBUG=True Django muestra su pagina tecnica antes de llegar aca."""
+    return render(request, "gestion/404.html", status=404)
+
+
 def login(request):
     """Pagina de entrada del modulo: un boton para iniciar sesion con Google.
     Si el usuario ya tiene sesion y perfil, salta directo al panel. Preserva
