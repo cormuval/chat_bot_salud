@@ -2636,6 +2636,18 @@ class ReporteSolicitudesTests(TestCase):
         self.client.force_login(u)
         crear_solicitud_base(centro_salud=self.centro, nombre="Pedro Test", rut="25747311-2")
 
+    def test_filtro_de_rango_no_depende_de_convert_tz(self):
+        # El filtro por rango debe comparar contra limites de datetime, no usar
+        # __date (que genera DATE(CONVERT_TZ(...))). En MySQL sin tablas de tz,
+        # CONVERT_TZ con zona nombrada devuelve NULL y el reporte sale vacio.
+        from datetime import date
+
+        from gestion.reportes import limites_datetime
+
+        inicio, fin = limites_datetime(date(2026, 1, 1), date(2026, 1, 31))
+        qs = Solicitud.objects.filter(date_solicitud__gte=inicio, date_solicitud__lt=fin)
+        self.assertNotIn("CONVERT_TZ", str(qs.query))
+
     def test_descarga_csv_de_solicitudes(self):
         response = self.client.get(
             "/reportes/solicitudes/?desde=2000-01-01&hasta=2100-01-01",
@@ -2715,9 +2727,22 @@ class PalabrasPrioridadUiTests(TestCase):
         PerfilUsuario.objects.create(usuario=u, rol=rol, centro=self.centro)
         self.client.force_login(u)
 
-    def test_solo_supervisor_das_accede(self):
-        self._login(PerfilUsuario.Rol.ADMIN)
-        self.assertEqual(self.client.get("/palabras-prioridad/", HTTP_HOST="gestion.localhost").status_code, 302)
+    def test_admin_y_supervisor_das_acceden(self):
+        for rol in (PerfilUsuario.Rol.ADMIN, PerfilUsuario.Rol.SUPERVISOR_DAS):
+            with self.subTest(rol=rol):
+                User.objects.filter(username=f"p-{rol}@cmvalparaiso.cl").delete()
+                self._login(rol)
+                self.assertEqual(
+                    self.client.get("/palabras-prioridad/", HTTP_HOST="gestion.localhost").status_code,
+                    200,
+                )
+
+    def test_rol_sin_permiso_no_accede_a_palabras(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO)
+        self.assertEqual(
+            self.client.get("/palabras-prioridad/", HTTP_HOST="gestion.localhost").status_code,
+            302,
+        )
 
     def test_supervisor_das_ve_lista(self):
         self._login(PerfilUsuario.Rol.SUPERVISOR_DAS)

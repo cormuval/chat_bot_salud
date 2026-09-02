@@ -15,7 +15,7 @@ from .permisos import (
     puede_ver_reportes,
     roles_asignables,
 )
-from .reportes import exportar_csv, rango_fechas
+from .reportes import exportar_csv, limites_datetime, rango_fechas
 
 
 def _perfiles_del_alcance(perfil):
@@ -133,7 +133,8 @@ def reporte_solicitudes(request):
     if desde is None or hasta is None:
         messages.error(request, "Indique el rango de fechas (desde y hasta).")
         return redirect("gestion:reportes")
-    qs = _solicitudes_del_alcance(perfil).filter(date_solicitud__date__range=(desde, hasta))
+    inicio, fin = limites_datetime(desde, hasta)
+    qs = _solicitudes_del_alcance(perfil).filter(date_solicitud__gte=inicio, date_solicitud__lt=fin)
     encabezados = ["Fecha", "RUT", "Nombre", "Telefono", "Edad", "Sexo", "Centro",
                    "Motivo", "Detalle", "Prioridad administrativa", "Puntaje"]
     filas = (
@@ -165,7 +166,8 @@ def reporte_contactabilidad(request):
     if desde is None or hasta is None:
         messages.error(request, "Indique el rango de fechas (desde y hasta).")
         return redirect("gestion:reportes")
-    qs = _registros_del_alcance(perfil).filter(creado_en__date__range=(desde, hasta))
+    inicio, fin = limites_datetime(desde, hasta)
+    qs = _registros_del_alcance(perfil).filter(creado_en__gte=inicio, creado_en__lt=fin)
     encabezados = ["Fecha", "Paciente", "RUT", "Centro", "Canal", "Resultado", "Usuario", "Mensaje"]
     filas = (
         [
@@ -188,10 +190,11 @@ def reporte_gestiones(request):
     if desde is None or hasta is None:
         messages.error(request, "Indique el rango de fechas (desde y hasta).")
         return redirect("gestion:reportes")
+    inicio, fin = limites_datetime(desde, hasta)
     qs = (
         Gestion.objects.select_related("solicitud__centro_salud", "decidido_por", "motivo_rechazo")
         .del_alcance(perfil)
-        .filter(fecha_decision__date__range=(desde, hasta))
+        .filter(fecha_decision__gte=inicio, fecha_decision__lt=fin)
         .order_by("fecha_decision")
     )
     encabezados = ["Fecha decision", "Paciente", "RUT", "Centro", "Decision",
