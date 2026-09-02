@@ -3,7 +3,7 @@
 {% block content %}
 <section class="page-title">
   <div><h2>Perfiles de acceso</h2></div>
-  <a class="button btn--confirmar" href="#">Nuevo perfil</a>
+  <a class="button btn--confirmar" href="{% url 'gestion:perfil_crear' %}">Nuevo perfil</a>
 </section>
 <table class="data-table">
   <thead><tr><th>Correo</th><th>Rol</th><th>Centro</th><th>Activo</th><th></th></tr></thead>
@@ -14,7 +14,7 @@
         <td data-label="Rol">{{ p.get_rol_display }}</td>
         <td data-label="Centro">{{ p.centro }}</td>
         <td data-label="Activo">{{ p.activo|yesno:"Si,No" }}</td>
-        <td data-label="Editar"><a href="#">Editar</a></td>
+        <td data-label="Editar"><a href="{% url 'gestion:perfil_editar' p.pk %}">Editar</a></td>
       </tr>
     {% empty %}
       <tr><td colspan="5"><div class="empty-state">No hay perfiles en su alcance.</div></td></tr>

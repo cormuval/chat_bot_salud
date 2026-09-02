@@ -2515,3 +2515,71 @@ class PerfilesListaTests(TestCase):
         self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
         response = self.client.get("/perfiles/", HTTP_HOST="gestion.localhost")
         self.assertNotContains(response, "otro-b@cmvalparaiso.cl")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class PerfilesCrudTests(TestCase):
+    def setUp(self):
+        self.centro_a = Centro.objects.get(pk=620)
+        self.centro_b = Centro.objects.exclude(pk=620).first()
+
+    def _login(self, rol, centro):
+        u = User.objects.create_user(f"jefe-{rol}@cmvalparaiso.cl", email=f"jefe-{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=rol, centro=centro)
+        self.client.force_login(u)
+
+    def test_admin_crea_perfil_y_user_por_email(self):
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        response = self.client.post(
+            "/perfiles/nuevo/",
+            {"email": "nuevo@cmvalparaiso.cl", "rol": "SELECTOR", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(email="nuevo@cmvalparaiso.cl")
+        self.assertTrue(user.is_active)
+        self.assertFalse(user.has_usable_password())
+        self.assertTrue(PerfilUsuario.objects.filter(usuario=user, rol="SELECTOR").exists())
+
+    def test_supervisor_centro_no_puede_crear_admin(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        response = self.client.post(
+            "/perfiles/nuevo/",
+            {"email": "x@cmvalparaiso.cl", "rol": "ADMIN", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertFalse(User.objects.filter(email="x@cmvalparaiso.cl").exists())
+
+    def test_supervisor_centro_no_puede_crear_en_otro_centro(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        self.client.post(
+            "/perfiles/nuevo/",
+            {"email": "y@cmvalparaiso.cl", "rol": "SELECTOR", "centro": self.centro_b.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertFalse(User.objects.filter(email="y@cmvalparaiso.cl").exists())
+
+    def test_dar_de_baja_es_logico(self):
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        u = User.objects.create_user("baja@cmvalparaiso.cl", email="baja@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="SELECTOR", centro=self.centro_a)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "SELECTOR", "centro": self.centro_a.pk},  # sin 'activo' => False
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertFalse(p.activo)
+        self.assertTrue(PerfilUsuario.objects.filter(pk=p.pk).exists())
+
+    def test_no_se_puede_dar_de_baja_al_ultimo_admin(self):
+        u = User.objects.create_user("unico-admin@cmvalparaiso.cl", email="unico-admin@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        self.client.force_login(u)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "ADMIN", "centro": self.centro_a.pk},  # intenta desactivar
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertTrue(p.activo)
