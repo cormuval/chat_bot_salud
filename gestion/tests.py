@@ -2460,3 +2460,246 @@ class Error404GestionTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertContains(response, "no existe", status_code=404, html=False)
         self.assertTemplateUsed(response, "gestion/404.html")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class AdminPanelAccesoTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+
+    def _login(self, rol):
+        usuario = User.objects.create_user(f"{rol}@cmvalparaiso.cl", email=f"{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=usuario, rol=rol, centro=self.centro)
+        self.client.force_login(usuario)
+        return usuario
+
+    def test_rol_operativo_no_ve_panel(self):
+        self._login(PerfilUsuario.Rol.SELECTOR)
+        response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+
+    def test_admin_ve_panel_con_accesos(self):
+        self._login(PerfilUsuario.Rol.ADMIN)
+        response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Perfiles")
+        self.assertContains(response, "Reportes")
+
+    def test_supervisor_centro_ve_panel(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO)
+        response = self.client.get("/admin-panel/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class PerfilesListaTests(TestCase):
+    def setUp(self):
+        self.centro_a = Centro.objects.get(pk=620)
+        self.centro_b = Centro.objects.exclude(pk=620).first()
+
+    def _login(self, rol, centro):
+        u = User.objects.create_user(f"admin-{rol}@cmvalparaiso.cl", email=f"admin-{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=rol, centro=centro)
+        self.client.force_login(u)
+
+    def test_admin_ve_perfiles_de_todos_los_centros(self):
+        otro = User.objects.create_user("otro@cmvalparaiso.cl", email="otro@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=otro, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro_b)
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        response = self.client.get("/perfiles/", HTTP_HOST="gestion.localhost")
+        self.assertContains(response, "otro@cmvalparaiso.cl")
+
+    def test_supervisor_centro_solo_ve_su_centro(self):
+        otro = User.objects.create_user("otro-b@cmvalparaiso.cl", email="otro-b@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=otro, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro_b)
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        response = self.client.get("/perfiles/", HTTP_HOST="gestion.localhost")
+        self.assertNotContains(response, "otro-b@cmvalparaiso.cl")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class PerfilesCrudTests(TestCase):
+    def setUp(self):
+        self.centro_a = Centro.objects.get(pk=620)
+        self.centro_b = Centro.objects.exclude(pk=620).first()
+
+    def _login(self, rol, centro):
+        u = User.objects.create_user(f"jefe-{rol}@cmvalparaiso.cl", email=f"jefe-{rol}@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=rol, centro=centro)
+        self.client.force_login(u)
+
+    def test_admin_crea_perfil_y_user_por_email(self):
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        response = self.client.post(
+            "/perfiles/nuevo/",
+            {"email": "nuevo@cmvalparaiso.cl", "rol": "SELECTOR", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(email="nuevo@cmvalparaiso.cl")
+        self.assertTrue(user.is_active)
+        self.assertFalse(user.has_usable_password())
+        self.assertTrue(PerfilUsuario.objects.filter(usuario=user, rol="SELECTOR").exists())
+
+    def test_supervisor_centro_no_puede_crear_admin(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        response = self.client.post(
+            "/perfiles/nuevo/",
+            {"email": "x@cmvalparaiso.cl", "rol": "ADMIN", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertFalse(User.objects.filter(email="x@cmvalparaiso.cl").exists())
+
+    def test_supervisor_centro_no_puede_crear_en_otro_centro(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        self.client.post(
+            "/perfiles/nuevo/",
+            {"email": "y@cmvalparaiso.cl", "rol": "SELECTOR", "centro": self.centro_b.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertFalse(User.objects.filter(email="y@cmvalparaiso.cl").exists())
+
+    def test_dar_de_baja_es_logico(self):
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        u = User.objects.create_user("baja@cmvalparaiso.cl", email="baja@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="SELECTOR", centro=self.centro_a)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "SELECTOR", "centro": self.centro_a.pk},  # sin 'activo' => False
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertFalse(p.activo)
+        self.assertTrue(PerfilUsuario.objects.filter(pk=p.pk).exists())
+
+    def test_no_se_puede_dar_de_baja_al_ultimo_admin(self):
+        u = User.objects.create_user("unico-admin@cmvalparaiso.cl", email="unico-admin@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        self.client.force_login(u)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "ADMIN", "centro": self.centro_a.pk},  # intenta desactivar
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertTrue(p.activo)
+
+    def test_supervisor_centro_no_puede_editar_admin_de_su_centro(self):
+        self._login(PerfilUsuario.Rol.SUPERVISOR_CENTRO, self.centro_a)
+        u = User.objects.create_user("adm-a@cmvalparaiso.cl", email="adm-a@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        # Otro admin activo en otro centro: sin esto, la guarda de "ultimo
+        # admin activo" bloquearia el ataque por su cuenta y el test no
+        # distinguiria si lo que protege es esa guarda o la de frontera.
+        otro_admin = User.objects.create_user("adm-b@cmvalparaiso.cl", email="adm-b@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=otro_admin, rol="ADMIN", centro=self.centro_b)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "SELECTOR", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertEqual(p.rol, "ADMIN")
+        self.assertTrue(p.activo)
+
+    def test_no_se_puede_degradar_al_ultimo_admin(self):
+        u = User.objects.create_user("solo-admin2@cmvalparaiso.cl", email="solo-admin2@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        self.client.force_login(u)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "SELECTOR", "centro": self.centro_a.pk, "activo": "on"},
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertEqual(p.rol, "ADMIN")
+
+    def test_admin_no_ultimo_puede_desactivarse(self):
+        self._login(PerfilUsuario.Rol.ADMIN, self.centro_a)
+        u = User.objects.create_user("admin2@cmvalparaiso.cl", email="admin2@cmvalparaiso.cl")
+        p = PerfilUsuario.objects.create(usuario=u, rol="ADMIN", centro=self.centro_a)
+        self.client.post(
+            f"/perfiles/{p.pk}/",
+            {"rol": "ADMIN", "centro": self.centro_a.pk},
+            HTTP_HOST="gestion.localhost",
+        )
+        p.refresh_from_db()
+        self.assertFalse(p.activo)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ReporteSolicitudesTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        u = User.objects.create_user("rep@cmvalparaiso.cl", email="rep@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=PerfilUsuario.Rol.ADMIN, centro=self.centro)
+        self.client.force_login(u)
+        crear_solicitud_base(centro_salud=self.centro, nombre="Pedro Test", rut="25747311-2")
+
+    def test_descarga_csv_de_solicitudes(self):
+        response = self.client.get(
+            "/reportes/solicitudes/?desde=2000-01-01&hasta=2100-01-01",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        contenido = b"".join(response.streaming_content).decode("utf-8")
+        self.assertTrue(contenido.startswith("﻿"))
+        self.assertIn("Pedro Test", contenido)
+        self.assertIn("RUT", contenido)
+
+    def test_sin_rango_no_exporta(self):
+        response = self.client.get("/reportes/solicitudes/", HTTP_HOST="gestion.localhost")
+        self.assertNotEqual(response.get("Content-Type", ""), "text/csv; charset=utf-8")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ReportesOperativosTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.usuario = User.objects.create_user("rep2@cmvalparaiso.cl", email="rep2@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=self.usuario, rol=PerfilUsuario.Rol.ADMIN, centro=self.centro)
+        self.client.force_login(self.usuario)
+        sol = crear_solicitud_base(centro_salud=self.centro, nombre="Luz Vega")
+        self.gestion = sol.gestion
+        self.gestion.aceptar(self.usuario, Solicitud.Prioridad.MEDIA)
+        self.gestion.registrar_no_contesta(self.usuario, token_contacto="t1")
+
+    def test_reporte_contactabilidad(self):
+        response = self.client.get(
+            "/reportes/contactabilidad/?desde=2000-01-01&hasta=2100-01-01",
+            HTTP_HOST="gestion.localhost",
+        )
+        contenido = b"".join(response.streaming_content).decode("utf-8")
+        self.assertIn("Luz Vega", contenido)
+        self.assertIn("No contesta", contenido)
+
+    def test_reporte_gestiones_selector(self):
+        response = self.client.get(
+            "/reportes/gestiones/?desde=2000-01-01&hasta=2100-01-01",
+            HTTP_HOST="gestion.localhost",
+        )
+        contenido = b"".join(response.streaming_content).decode("utf-8")
+        self.assertIn("Luz Vega", contenido)
+        self.assertIn("Aceptada", contenido)
+
+    def test_reportes_respetan_aislamiento_por_centro(self):
+        centro_a = Centro.objects.get(pk=620)
+        centro_b = Centro.objects.exclude(pk=620).first()
+        supervisor = User.objects.create_user("sup-a@cmvalparaiso.cl", email="sup-a@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(
+            usuario=supervisor, rol=PerfilUsuario.Rol.SUPERVISOR_CENTRO, centro=centro_a
+        )
+        actor = User.objects.create_user("actor-rep@cmvalparaiso.cl", email="actor-rep@cmvalparaiso.cl")
+        for centro, nombre in ((centro_a, "Ana EnCentroA"), (centro_b, "Beto EnCentroB")):
+            sol = crear_solicitud_base(centro_salud=centro, nombre=nombre)
+            g = sol.gestion
+            g.aceptar(actor, Solicitud.Prioridad.MEDIA)
+            g.registrar_no_contesta(actor, token_contacto=f"tok-{sol.pk}")
+        self.client.force_login(supervisor)
+        rango = "?desde=2000-01-01&hasta=2100-01-01"
+        for url in ("/reportes/solicitudes/", "/reportes/contactabilidad/", "/reportes/gestiones/"):
+            resp = self.client.get(url + rango, HTTP_HOST="gestion.localhost")
+            contenido = b"".join(resp.streaming_content).decode("utf-8")
+            self.assertIn("EnCentroA", contenido, url)
+            self.assertNotIn("EnCentroB", contenido, url)

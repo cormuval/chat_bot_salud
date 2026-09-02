@@ -1,4 +1,5 @@
 {% load static %}
+{% load gestion_ui %}
 <!doctype html>
 <html lang="es">
 <head>
@@ -53,6 +54,9 @@
     <nav class="gestion-nav" aria-label="Navegacion principal">
       <a href="{% url 'gestion:selector_lista' %}">Selector</a>
       <a href="{% url 'gestion:comunicador_lista' %}">Comunicador</a>
+      {% if perfil|puede_administrar or perfil|puede_ver_reportes %}
+        <a href="{% url 'gestion:admin_panel' %}">Administracion</a>
+      {% endif %}
     </nav>
     {% endif %}
     <main class="gestion-main">

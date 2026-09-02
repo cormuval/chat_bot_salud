@@ -1,0 +1,20 @@
+{% extends "gestion/base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block content %}
+<section class="page-title"><div><h2>Reportes</h2><p>Descargas en CSV. Indique el rango de fechas.</p></div></section>
+<form method="get" action="{% url 'gestion:reporte_solicitudes' %}" class="admin-form">
+  <label>Desde <input type="date" name="desde" required></label>
+  <label>Hasta <input type="date" name="hasta" required></label>
+  <button class="btn--confirmar" type="submit">Descargar solicitudes</button>
+</form>
+<form method="get" action="{% url 'gestion:reporte_contactabilidad' %}" class="admin-form">
+  <label>Desde <input type="date" name="desde" required></label>
+  <label>Hasta <input type="date" name="hasta" required></label>
+  <button class="btn--confirmar" type="submit">Descargar contactabilidad</button>
+</form>
+<form method="get" action="{% url 'gestion:reporte_gestiones' %}" class="admin-form">
+  <label>Desde <input type="date" name="desde" required></label>
+  <label>Hasta <input type="date" name="hasta" required></label>
+  <button class="btn--confirmar" type="submit">Descargar gestiones del selector</button>
+</form>
+{% endblock %}
