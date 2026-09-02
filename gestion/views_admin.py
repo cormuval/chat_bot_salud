@@ -3,6 +3,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.shortcuts import redirect, render
 
+from solicitudes.models import Solicitud
+
 from .forms_admin import PerfilAdminForm
 from .models import PerfilUsuario
 from .permisos import (
@@ -10,8 +12,10 @@ from .permisos import (
     es_ultimo_admin_activo,
     obtener_perfil_activo,
     puede_administrar_perfiles,
+    puede_ver_reportes,
     roles_asignables,
 )
+from .reportes import exportar_csv, rango_fechas
 
 
 def _perfiles_del_alcance(perfil):
@@ -103,3 +107,41 @@ def perfil_editar(request, pk):
             messages.success(request, "Perfil actualizado.")
             return redirect("gestion:perfiles_lista")
     return render(request, "gestion/perfil_form.html", {"perfil": editor, "form": form, "es_creacion": False})
+
+
+@login_required
+def reportes(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_ver_reportes(perfil):
+        return redirect("gestion:sin_acceso")
+    return render(request, "gestion/reportes.html", {"perfil": perfil})
+
+
+def _solicitudes_del_alcance(perfil):
+    qs = Solicitud.objects.select_related("centro_salud").order_by("date_solicitud")
+    if perfil.ve_todos_los_centros:
+        return qs
+    return qs.filter(centro_salud__in=perfil.centros_permitidos())
+
+
+@login_required
+def reporte_solicitudes(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_ver_reportes(perfil):
+        return redirect("gestion:sin_acceso")
+    desde, hasta = rango_fechas(request)
+    if desde is None or hasta is None:
+        messages.error(request, "Indique el rango de fechas (desde y hasta).")
+        return redirect("gestion:reportes")
+    qs = _solicitudes_del_alcance(perfil).filter(date_solicitud__date__range=(desde, hasta))
+    encabezados = ["Fecha", "RUT", "Nombre", "Telefono", "Edad", "Sexo", "Centro",
+                   "Motivo", "Detalle", "Prioridad administrativa", "Puntaje"]
+    filas = (
+        [
+            s.date_solicitud.strftime("%Y-%m-%d %H:%M"), s.rut, s.nombre, s.telefono,
+            s.edad, s.get_sexo_display(), str(s.centro_salud), s.motivo, s.detalle_motivo,
+            s.get_priorizacion_solicitud_display(), s.puntaje_prioridad,
+        ]
+        for s in qs.iterator()
+    )
+    return exportar_csv("solicitudes.csv", encabezados, filas)

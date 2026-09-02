@@ -2625,3 +2625,29 @@ class PerfilesCrudTests(TestCase):
         )
         p.refresh_from_db()
         self.assertFalse(p.activo)
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ReporteSolicitudesTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        u = User.objects.create_user("rep@cmvalparaiso.cl", email="rep@cmvalparaiso.cl")
+        PerfilUsuario.objects.create(usuario=u, rol=PerfilUsuario.Rol.ADMIN, centro=self.centro)
+        self.client.force_login(u)
+        crear_solicitud_base(centro_salud=self.centro, nombre="Pedro Test", rut="25747311-2")
+
+    def test_descarga_csv_de_solicitudes(self):
+        response = self.client.get(
+            "/reportes/solicitudes/?desde=2000-01-01&hasta=2100-01-01",
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        contenido = b"".join(response.streaming_content).decode("utf-8")
+        self.assertTrue(contenido.startswith("﻿"))
+        self.assertIn("Pedro Test", contenido)
+        self.assertIn("RUT", contenido)
+
+    def test_sin_rango_no_exporta(self):
+        response = self.client.get("/reportes/solicitudes/", HTTP_HOST="gestion.localhost")
+        self.assertNotEqual(response.get("Content-Type", ""), "text/csv; charset=utf-8")

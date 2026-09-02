@@ -1,0 +1,11 @@
+{% extends "gestion/base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block content %}
+<section class="page-title"><div><h2>Reportes</h2><p>Descargas en CSV. Indique el rango de fechas.</p></div></section>
+{% for m in messages %}<p class="danger-text">{{ m }}</p>{% endfor %}
+<form method="get" action="{% url 'gestion:reporte_solicitudes' %}" class="admin-form">
+  <label>Desde <input type="date" name="desde" required></label>
+  <label>Hasta <input type="date" name="hasta" required></label>
+  <button class="btn--confirmar" type="submit">Descargar solicitudes</button>
+</form>
+{% endblock %}
