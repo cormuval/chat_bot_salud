@@ -323,10 +323,26 @@ class PalabraClavePrioridadModeloTests(TestCase):
         self.assertEqual(normalizar("  FIEBRE "), "fiebre")
 
     def test_guardar_calcula_texto_normalizado(self):
-        p = PalabraClavePrioridad.objects.create(texto="Convulsión", nivel="URGENTE")
-        self.assertEqual(p.texto_normalizado, "convulsion")
+        p = PalabraClavePrioridad.objects.create(texto="Mareó", nivel="URGENTE")
+        self.assertEqual(p.texto_normalizado, "mareo")
 
     def test_unicidad_por_forma_normalizada(self):
-        PalabraClavePrioridad.objects.create(texto="Fiebre", nivel="MODERADA")
+        PalabraClavePrioridad.objects.create(texto="Tos", nivel="MODERADA")
         with self.assertRaises(IntegrityError):
-            PalabraClavePrioridad.objects.create(texto="fiebre", nivel="MODERADA")
+            PalabraClavePrioridad.objects.create(texto="tos", nivel="MODERADA")
+
+
+class SeedPalabrasPrioridadTests(TestCase):
+    def test_semilla_reproduce_las_palabras_actuales(self):
+        urgentes = set(
+            PalabraClavePrioridad.objects.filter(nivel="URGENTE", activo=True)
+            .values_list("texto_normalizado", flat=True)
+        )
+        self.assertIn("convulsion", urgentes)
+        self.assertIn("dolor pecho", urgentes)
+        self.assertEqual(
+            PalabraClavePrioridad.objects.filter(nivel="URGENTE").count(), 9
+        )
+        self.assertEqual(
+            PalabraClavePrioridad.objects.filter(nivel="MODERADA").count(), 6
+        )
