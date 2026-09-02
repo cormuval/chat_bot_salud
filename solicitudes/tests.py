@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.db import IntegrityError
@@ -346,3 +347,29 @@ class SeedPalabrasPrioridadTests(TestCase):
         self.assertEqual(
             PalabraClavePrioridad.objects.filter(nivel="MODERADA").count(), 6
         )
+
+
+class PriorizacionDesdeBDTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def _datos(self, texto):
+        return {"motivo": texto, "detalle_motivo": "", "edad": 30,
+                "credendencial_cuidador_discapacidad": False,
+                "Neurodivergente_prais_gestante": False}
+
+    def test_palabra_activa_sube_la_prioridad(self):
+        # 'convulsion' viene sembrada como URGENTE (+4) => ALTA
+        self.assertEqual(calcular_prioridad(self._datos("convulsion"))["clasificacion"], "ALTA")
+
+    def test_match_ignora_acentos(self):
+        self.assertEqual(calcular_prioridad(self._datos("Convulsión"))["clasificacion"], "ALTA")
+
+    def test_desactivar_palabra_baja_la_prioridad(self):
+        PalabraClavePrioridad.objects.filter(texto_normalizado="convulsion").update(activo=False)
+        cache.clear()
+        self.assertEqual(calcular_prioridad(self._datos("convulsion"))["clasificacion"], "BAJA")
+
+    def test_palabra_nueva_aplica_sin_tocar_codigo(self):
+        PalabraClavePrioridad.objects.create(texto="mareo", nivel="URGENTE")
+        self.assertEqual(calcular_prioridad(self._datos("tengo mareo"))["clasificacion"], "ALTA")

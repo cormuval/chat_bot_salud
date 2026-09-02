@@ -1,35 +1,31 @@
-URGENT_KEYWORDS = [
-    "dolor pecho",
-    "dificultad respiratoria",
-    "falta de aire",
-    "convulsion",
-    "desmayo",
-    "sangrado",
-    "embarazo",
-    "gestante",
-    "suicida",
-]
+from django.core.cache import cache
 
-MODERATE_KEYWORDS = [
-    "fiebre",
-    "dolor intenso",
-    "vomitos",
-    "diarrea",
-    "infeccion",
-    "herida",
-]
+from .texto import normalizar
+
+CACHE_PALABRAS = "solicitudes_palabras_prioridad_v1"
 
 
-def _contains_any(text, keywords):
-    normalized = (text or "").lower()
-    return any(keyword in normalized for keyword in keywords)
+def palabras_por_nivel():
+    """Palabras activas agrupadas por nivel, en forma normalizada. Cacheadas;
+    la cache se invalida al guardar o borrar una palabra (ver signals.py)."""
+    data = cache.get(CACHE_PALABRAS)
+    if data is None:
+        from .models import PalabraClavePrioridad
+
+        data = {"URGENTE": [], "MODERADA": []}
+        for texto_norm, nivel in PalabraClavePrioridad.objects.filter(
+            activo=True
+        ).values_list("texto_normalizado", "nivel"):
+            data.setdefault(nivel, []).append(texto_norm)
+        cache.set(CACHE_PALABRAS, data, None)
+    return data
 
 
-def _first_keyword(text, keywords):
-    normalized = (text or "").lower()
-    for keyword in keywords:
-        if keyword in normalized:
-            return keyword
+def _primera_coincidencia(texto, palabras_normalizadas):
+    normal = normalizar(texto)
+    for palabra in palabras_normalizadas:
+        if palabra in normal:
+            return palabra
     return ""
 
 
@@ -38,7 +34,9 @@ def desglosar_prioridad(datos):
     clinical_text = f"{datos.get('motivo', '')} {datos.get('detalle_motivo', '')}"
     factores = []
 
-    palabra_urgente = _first_keyword(clinical_text, URGENT_KEYWORDS)
+    palabras = palabras_por_nivel()
+
+    palabra_urgente = _primera_coincidencia(clinical_text, palabras["URGENTE"])
     if palabra_urgente:
         factores.append(
             {
@@ -48,7 +46,7 @@ def desglosar_prioridad(datos):
             }
         )
 
-    palabra_moderada = _first_keyword(clinical_text, MODERATE_KEYWORDS)
+    palabra_moderada = _primera_coincidencia(clinical_text, palabras["MODERADA"])
     if palabra_moderada:
         factores.append(
             {
