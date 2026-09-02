@@ -207,7 +207,7 @@ class HostRoutingTests(TestCase):
         # que el host de gestion esta usando ese urlconf y no el del chatbot.
         response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("no tiene acceso", response.content.decode("utf-8").lower())
+        self.assertIn("permisos", response.content.decode("utf-8").lower())
 
     def test_host_default_resuelve_chatbot(self):
         response = self.client.get("/", HTTP_HOST="testserver")
@@ -391,7 +391,7 @@ class RutasDeLoginTests(TestCase):
     def test_sin_acceso_responde_200(self):
         response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("no tiene acceso", response.content.decode("utf-8").lower())
+        self.assertIn("permisos", response.content.decode("utf-8").lower())
 
     def test_logout_por_get_no_esta_permitido(self):
         # mozilla-django-oidc solo cierra sesion por POST; por GET responde 405.
@@ -419,7 +419,7 @@ class RutasDeLoginTests(TestCase):
         response = self.client.post("/oidc/logout/", HTTP_HOST="gestion.localhost")
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/sin-acceso/")
+        self.assertEqual(response["Location"], "/login/")
         self.assertNotIn("_auth_user_id", self.client.session)
 
 
@@ -431,7 +431,7 @@ class PanelRequiereLoginTests(TestCase):
     def test_anonimo_es_redirigido_al_login(self):
         response = self.client.get("/", HTTP_HOST="gestion.localhost")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/oidc/authenticate/", response["Location"])
+        self.assertIn("/login/", response["Location"])
 
     def test_usuario_con_perfil_va_a_cola_selector(self):
         usuario = User.objects.create_user(
@@ -2409,3 +2409,54 @@ class GestionAccesibilidadMarkupTests(TestCase):
             f'href="tel:{gestion.solicitud.telefono}"',
             html=False,
         )
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class AccesoLoginTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+
+    def test_sin_sesion_una_ruta_protegida_redirige_al_login(self):
+        response = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/login/?next=/selector/")
+
+    def test_login_muestra_boton_de_google_con_next(self):
+        response = self.client.get("/login/?next=/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/oidc/authenticate/", html=False)
+        self.assertContains(response, "next=%2Fselector%2F", html=False)
+
+    def test_login_descarta_next_con_host_externo(self):
+        response = self.client.get(
+            "/login/?next=https://malicioso.example/x", HTTP_HOST="gestion.localhost"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "malicioso.example", html=False)
+
+    def test_login_no_muestra_navegacion(self):
+        response = self.client.get("/login/", HTTP_HOST="gestion.localhost")
+        self.assertNotContains(response, 'aria-label="Navegacion principal"', html=False)
+
+    def test_logout_redirige_al_login(self):
+        from django.conf import settings
+        self.assertEqual(settings.LOGOUT_REDIRECT_URL, "/login/")
+
+    def test_sin_acceso_ofrece_cerrar_sesion(self):
+        response = self.client.get("/sin-acceso/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/oidc/logout/", html=False)
+        self.assertContains(response, "permisos", html=False)
+
+
+@override_settings(
+    DEBUG=False,
+    ALLOWED_HOSTS=["gestion.localhost", "testserver"],
+    GESTION_HOST="gestion.localhost",
+)
+class Error404GestionTests(TestCase):
+    def test_ruta_inexistente_renderiza_404_del_modulo(self):
+        response = self.client.get("/ruta-que-no-existe-xyz/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(response, "no existe", status_code=404, html=False)
+        self.assertTemplateUsed(response, "gestion/404.html")

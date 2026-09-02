@@ -8,3 +8,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("gestion.urls")),
 ]
+
+handler404 = "gestion.views.pagina_no_encontrada"
