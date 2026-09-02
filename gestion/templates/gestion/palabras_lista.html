@@ -1,0 +1,23 @@
+{% extends "gestion/base.html" %}
+{% block title %}Palabras clave de prioridad{% endblock %}
+{% block content %}
+<section class="page-title">
+  <div><h2>Palabras clave de prioridad</h2></div>
+  <a class="button btn--confirmar" href="{% url 'gestion:palabra_crear' %}">Nueva palabra</a>
+</section>
+<table class="data-table">
+  <thead><tr><th>Palabra</th><th>Nivel</th><th>Activa</th><th></th></tr></thead>
+  <tbody>
+    {% for p in palabras %}
+      <tr>
+        <td data-label="Palabra">{{ p.texto }}</td>
+        <td data-label="Nivel">{{ p.get_nivel_display }}</td>
+        <td data-label="Activa">{{ p.activo|yesno:"Si,No" }}</td>
+        <td data-label="Editar"><a href="{% url 'gestion:palabra_editar' p.pk %}">Editar</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4"><div class="empty-state">No hay palabras cargadas.</div></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

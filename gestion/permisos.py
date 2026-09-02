@@ -80,6 +80,10 @@ def centros_administrables(perfil):
     return Centro.objects.filter(pk=perfil.centro_id)
 
 
+def puede_editar_palabras_prioridad(perfil):
+    return perfil.rol == PerfilUsuario.Rol.SUPERVISOR_DAS
+
+
 def es_ultimo_admin_activo(perfil):
     if perfil.rol != PerfilUsuario.Rol.ADMIN or not perfil.activo:
         return False

@@ -22,6 +22,11 @@ def puede_ver_reportes(perfil):
 
 
 @register.filter
+def puede_editar_palabras(perfil):
+    return bool(perfil) and permisos.puede_editar_palabras_prioridad(perfil)
+
+
+@register.filter
 def prioridad_css(valor):
     return f"prioridad--{str(valor or '').lower()}"
 

@@ -1,5 +1,7 @@
 from django import forms
 
+from solicitudes.models import PalabraClavePrioridad
+
 from .models import PerfilUsuario
 from .permisos import centros_administrables, roles_asignables
 
@@ -26,3 +28,9 @@ class PerfilAdminForm(forms.ModelForm):
             ]
             self.fields["centro"].queryset = centros_administrables(perfil_editor)
             self.fields["centro_satelite"].queryset = centros_administrables(perfil_editor)
+
+
+class PalabraPrioridadForm(forms.ModelForm):
+    class Meta:
+        model = PalabraClavePrioridad
+        fields = ["texto", "nivel", "activo"]

@@ -1,9 +1,11 @@
 {% extends "gestion/base.html" %}
+{% load gestion_ui %}
 {% block title %}Administracion{% endblock %}
 {% block content %}
 <section class="page-title"><div><h2>Administracion</h2></div></section>
 <div class="admin-tiles">
   {% if puede_perfiles %}<a class="button" href="{% url 'gestion:perfiles_lista' %}" data-admin-perfiles>Perfiles</a>{% endif %}
   {% if puede_reportes %}<a class="button" href="{% url 'gestion:reportes' %}" data-admin-reportes>Reportes</a>{% endif %}
+  {% if perfil|puede_editar_palabras %}<a class="button" href="{% url 'gestion:palabras_lista' %}">Palabras de prioridad</a>{% endif %}
 </div>
 {% endblock %}
