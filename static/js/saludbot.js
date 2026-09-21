@@ -218,6 +218,10 @@
     return condicionOpciones.find((option) => option.id === value)?.nombre || "";
   }
 
+  function esPasoDeBotones(step) {
+    return Boolean(step && (step.type || step.options));
+  }
+
   function botIcon() {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4v5h5v4h-5v5h-4v-5H5V8h5V3Zm-5 17h14v-2H5v2Z"/></svg>';
   }
@@ -282,11 +286,12 @@
     window.setTimeout(() => {
       row.remove();
       state.waiting = false;
-      input.disabled = false;
-      submitButton.disabled = false;
+      const gate = esPasoDeBotones(steps[state.index]);
+      input.disabled = gate;
+      submitButton.disabled = gate;
       callback();
       scrollToLatest();
-      input.focus();
+      if (!gate) input.focus();
     }, 520);
   }
 

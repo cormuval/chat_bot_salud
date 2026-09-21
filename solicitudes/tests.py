@@ -326,6 +326,14 @@ class SaludBotScriptTests(SimpleTestCase):
         self.assertLess(centro_index, rut_index)
         self.assertLess(centro_index, nombre_index)
 
+    def test_input_se_bloquea_en_pasos_de_botones(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("function esPasoDeBotones(step)", script)
+        # El gate se deriva del tipo de paso y se aplica al input y al boton.
+        self.assertIn("const gate = esPasoDeBotones(steps[state.index]);", script)
+        self.assertIn("input.disabled = gate;", script)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):
