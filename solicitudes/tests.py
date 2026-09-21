@@ -314,6 +314,18 @@ class SaludBotScriptTests(SimpleTestCase):
         self.assertIn("success-notice__title", script)
         self.assertIn("Importante", script)
 
+    def test_cesfam_se_pregunta_antes_del_rut_y_nombre(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        centro_index = script.index('field: "centro_salud"')
+        rut_index = script.index('field: "rut"')
+        nombre_index = script.index('field: "nombre"')
+        sintomas_index = script.index('field: "detalle_sintomas"')
+
+        self.assertLess(sintomas_index, centro_index)
+        self.assertLess(centro_index, rut_index)
+        self.assertLess(centro_index, nombre_index)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):

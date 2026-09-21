@@ -64,6 +64,19 @@
       validate: minLength("Describe tus sintomas con al menos 20 caracteres para orientar mejor la atencion.", 20),
     },
     {
+      field: "centro_salud",
+      prompt: "Selecciona el CESFAM donde quieres orientar esta solicitud.",
+      options: centrosSalud,
+      validate(value) {
+        return centrosSalud.some((centro) => centro.id === value)
+          ? null
+          : "Selecciona una opcion de CESFAM de la lista.";
+      },
+      display(value) {
+        return centrosSalud.find((centro) => centro.id === value)?.nombre || value;
+      },
+    },
+    {
       field: "rut",
       prompt: "Para continuar, indícame el **RUT de la persona que requiere la atención**.\n**Ejemplo:** 12345678-9",
       validate(value) {
@@ -106,19 +119,6 @@
           : "Ingresa un telefono valido con formato 949106239.";
       },
       transform: normalizePhoneForStorage,
-    },
-    {
-      field: "centro_salud",
-      prompt: "Selecciona el CESFAM donde quieres orientar esta solicitud.",
-      options: centrosSalud,
-      validate(value) {
-        return centrosSalud.some((centro) => centro.id === value)
-          ? null
-          : "Selecciona una opcion de CESFAM de la lista.";
-      },
-      display(value) {
-        return centrosSalud.find((centro) => centro.id === value)?.nombre || value;
-      },
     },
     {
       field: "credendencial_cuidador_discapacidad",
