@@ -5,6 +5,7 @@
   const input = document.querySelector("#chatInput");
   const submitButton = form.querySelector("button");
   const INACTIVITY_LIMIT_MS = 20 * 60 * 1000;
+  const ADJUNTO_FOTO_HABILITADO = false;
 
   const centroInicial = root.dataset.centro || "Corporacion Municipal de Valparaiso";
   const userName = root.dataset.userName || "";
@@ -136,7 +137,7 @@
       prompt: "Puedes tomar una foto de la credencial para adjuntarla a la solicitud.",
       type: "photo",
       skip() {
-        return !state.data.credendencial_cuidador_discapacidad;
+        return !ADJUNTO_FOTO_HABILITADO || !state.data.credendencial_cuidador_discapacidad;
       },
       defaultValue() {
         return "";

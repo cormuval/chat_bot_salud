@@ -334,6 +334,13 @@ class SaludBotScriptTests(SimpleTestCase):
         self.assertIn("const gate = esPasoDeBotones(steps[state.index]);", script)
         self.assertIn("input.disabled = gate;", script)
 
+    def test_paso_de_foto_oculto_por_flag(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("const ADJUNTO_FOTO_HABILITADO = false;", script)
+        # El skip del paso de foto respeta el flag.
+        self.assertIn("!ADJUNTO_FOTO_HABILITADO", script)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):
