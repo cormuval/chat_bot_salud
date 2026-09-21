@@ -314,6 +314,14 @@ class SaludBotScriptTests(SimpleTestCase):
         self.assertIn("success-notice__title", script)
         self.assertIn("Importante", script)
 
+    def test_scroll_ancla_el_inicio_del_mensaje_del_bot(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("function scrollToLatest(target, sender)", script)
+        self.assertIn('block: sender === "bot" ? "start" : "nearest"', script)
+        # addMessage pasa el emisor al scroll para decidir el anclaje.
+        self.assertIn("scrollToLatest(row, sender);", script)
+
     def test_cesfam_se_pregunta_antes_del_rut_y_nombre(self):
         script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
 

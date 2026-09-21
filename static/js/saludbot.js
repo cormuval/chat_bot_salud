@@ -260,21 +260,23 @@
     }
 
     messages.appendChild(row);
-    scrollToLatest(row);
+    scrollToLatest(row, sender);
     return row;
   }
 
-  function scrollToLatest(target) {
+  function scrollToLatest(target, sender) {
+    const element = target || messages.lastElementChild;
+    if (!element) return;
     window.requestAnimationFrame(() => {
-      messages.scrollTo({
-        top: Math.max(messages.scrollHeight - messages.clientHeight + 32, 0),
+      const contenedor = messages.getBoundingClientRect();
+      const fila = element.getBoundingClientRect();
+      const entraCompleto = fila.top >= contenedor.top && fila.bottom <= contenedor.bottom;
+      if (entraCompleto) return; // ya visible: no forzar salto
+      element.scrollIntoView({
         behavior: "smooth",
+        block: sender === "bot" ? "start" : "nearest",
+        inline: "nearest",
       });
-      window.setTimeout(() => {
-        const element = target || messages.lastElementChild;
-        if (!element) return;
-        element.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
-      }, 80);
     });
   }
 
