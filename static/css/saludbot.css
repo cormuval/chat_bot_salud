@@ -54,7 +54,10 @@ input {
 
 .saludbot {
   width: min(100%, 920px);
-  min-height: 100dvh;
+  /* Altura fija (no min-height) para que la fila 1fr del chat recorte y .chat
+     tenga scroll propio, en vez de que crezca y scrollee la pagina entera.
+     Va junto con `.chat { min-height: 0 }`. */
+  height: 100dvh;
   margin: 0 auto;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
@@ -166,6 +169,9 @@ input {
 
 .chat {
   padding: 18px clamp(14px, 4vw, 28px) 112px;
+  /* min-height:0 permite que esta fila 1fr se encoja por debajo de su contenido
+     y asi overflow-y recorte y scrollee dentro de .chat (ver `.saludbot`). */
+  min-height: 0;
   overflow-y: auto;
   scroll-padding-bottom: 112px;
 }
