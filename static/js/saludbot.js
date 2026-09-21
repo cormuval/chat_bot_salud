@@ -5,6 +5,7 @@
   const input = document.querySelector("#chatInput");
   const submitButton = form.querySelector("button");
   const INACTIVITY_LIMIT_MS = 20 * 60 * 1000;
+  const ADJUNTO_FOTO_HABILITADO = false;
 
   const centroInicial = root.dataset.centro || "Corporacion Municipal de Valparaiso";
   const userName = root.dataset.userName || "";
@@ -44,14 +45,15 @@
 
   const steps = [
     {
-      field: "motivo",
-      prompt: "¿Por qué problema de salud necesitas consultar hoy?",
-      validate: minLength("Describe el motivo de consulta con al menos 3 caracteres.", 3),
-    },
-    {
       field: "acepta_terminos",
       prompt: "Antes de continuar, debes aceptar los Terminos y Condiciones de uso de la plataforma.",
       type: "terms",
+    },
+    {
+      field: "motivo",
+      prompt: "¿Por qué problema de salud necesitas consultar hoy?",
+      quick: true,
+      validate: minLength("Describe el motivo de consulta con al menos 3 caracteres.", 3),
     },
     {
       field: "detalle_sintomas",
@@ -61,6 +63,19 @@
 * ¿Han empeorado, mejorado o siguen igual?
 * ¿Has recibido atención médica por este problema?`,
       validate: minLength("Describe tus sintomas con al menos 20 caracteres para orientar mejor la atencion.", 20),
+    },
+    {
+      field: "centro_salud",
+      prompt: "Selecciona el CESFAM donde quieres orientar esta solicitud.",
+      options: centrosSalud,
+      validate(value) {
+        return centrosSalud.some((centro) => centro.id === value)
+          ? null
+          : "Selecciona una opcion de CESFAM de la lista.";
+      },
+      display(value) {
+        return centrosSalud.find((centro) => centro.id === value)?.nombre || value;
+      },
     },
     {
       field: "rut",
@@ -107,19 +122,6 @@
       transform: normalizePhoneForStorage,
     },
     {
-      field: "centro_salud",
-      prompt: "Selecciona el CESFAM donde quieres orientar esta solicitud.",
-      options: centrosSalud,
-      validate(value) {
-        return centrosSalud.some((centro) => centro.id === value)
-          ? null
-          : "Selecciona una opcion de CESFAM de la lista.";
-      },
-      display(value) {
-        return centrosSalud.find((centro) => centro.id === value)?.nombre || value;
-      },
-    },
-    {
       field: "credendencial_cuidador_discapacidad",
       prompt: "Cuentas con credencial de discapacidad o eres cuidador/a?",
       options: [
@@ -135,7 +137,7 @@
       prompt: "Puedes tomar una foto de la credencial para adjuntarla a la solicitud.",
       type: "photo",
       skip() {
-        return !state.data.credendencial_cuidador_discapacidad;
+        return !ADJUNTO_FOTO_HABILITADO || !state.data.credendencial_cuidador_discapacidad;
       },
       defaultValue() {
         return "";
@@ -217,6 +219,10 @@
     return condicionOpciones.find((option) => option.id === value)?.nombre || "";
   }
 
+  function esPasoDeBotones(step) {
+    return Boolean(step && (step.type || step.options));
+  }
+
   function botIcon() {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4v5h5v4h-5v5h-4v-5H5V8h5V3Zm-5 17h14v-2H5v2Z"/></svg>';
   }
@@ -254,21 +260,23 @@
     }
 
     messages.appendChild(row);
-    scrollToLatest(row);
+    scrollToLatest(row, sender);
     return row;
   }
 
-  function scrollToLatest(target) {
+  function scrollToLatest(target, sender) {
+    const element = target || messages.lastElementChild;
+    if (!element) return;
     window.requestAnimationFrame(() => {
-      messages.scrollTo({
-        top: Math.max(messages.scrollHeight - messages.clientHeight + 32, 0),
+      const contenedor = messages.getBoundingClientRect();
+      const fila = element.getBoundingClientRect();
+      const entraCompleto = fila.top >= contenedor.top && fila.bottom <= contenedor.bottom;
+      if (entraCompleto) return; // ya visible: no forzar salto
+      element.scrollIntoView({
         behavior: "smooth",
+        block: sender === "bot" ? "start" : "nearest",
+        inline: "nearest",
       });
-      window.setTimeout(() => {
-        const element = target || messages.lastElementChild;
-        if (!element) return;
-        element.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
-      }, 80);
     });
   }
 
@@ -281,11 +289,11 @@
     window.setTimeout(() => {
       row.remove();
       state.waiting = false;
-      input.disabled = false;
-      submitButton.disabled = false;
+      const gate = esPasoDeBotones(steps[state.index]);
+      input.disabled = gate;
+      submitButton.disabled = gate;
       callback();
-      scrollToLatest();
-      input.focus();
+      if (!gate) input.focus();
     }, 520);
   }
 
@@ -311,6 +319,13 @@
 
     if (step.type === "terms") {
       showTyping(() => addMessage(`${escapeHtml(step.prompt)}${renderTermsAcceptance()}`, "bot", { html: true }));
+      return;
+    }
+
+    if (step.quick) {
+      const greetingName = userName ? `, ${escapeHtml(userName)}` : "";
+      const saludo = `Hola 👋 Soy SaludBot${greetingName}, asistente virtual de salud familiar. Te ayudaré a solicitar una atención de salud médica y a recopilar información necesaria para que el equipo revise tu caso. ¿Qué problema de salud necesitas consultar hoy?`;
+      showTyping(() => addMessage(`${saludo}${quickActions()}`, "bot", { html: true }));
       return;
     }
 
@@ -407,17 +422,11 @@
       row.remove();
       state.waiting = false;
       addMessage(renderUrgencyWarning(), "bot", { html: true });
-      scrollToLatest();
     }, 520);
   }
 
   function start() {
-    const greetingName = userName ? `, ${escapeHtml(userName)}` : "";
-    addMessage(
-      `Hola 👋 Soy SaludBot${greetingName}, asistente virtual de salud familiar. Te ayudaré a solicitar una atención de salud médica y a recopilar información necesaria para que el equipo revise tu caso. ¿Qué problema de salud necesitas consultar hoy?${quickActions()}`,
-      "bot",
-      { html: true }
-    );
+    askCurrentStep();
     resetInactivityTimer();
   }
 
@@ -472,7 +481,6 @@
     input.placeholder = "Escribe tu respuesta...";
     input.value = "";
     start();
-    scrollToLatest();
   }
 
   function resetByInactivity() {

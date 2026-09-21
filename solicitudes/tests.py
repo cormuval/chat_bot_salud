@@ -284,18 +284,24 @@ class DesglosePrioridadTests(TestCase):
 
 
 class SaludBotScriptTests(SimpleTestCase):
-    def test_terminos_se_piden_despues_del_aviso_de_urgencia(self):
+    def test_terminos_es_la_primera_pantalla(self):
         script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
 
-        motivo_index = script.index('field: "motivo"')
         terminos_index = script.index('field: "acepta_terminos"')
+        motivo_index = script.index('field: "motivo"')
         sintomas_index = script.index('field: "detalle_sintomas"')
-        urgency_index = script.index("function renderUrgencyWarning()")
-        terms_box_index = script.index("function renderTermsAcceptance()")
 
-        self.assertLess(motivo_index, terminos_index)
-        self.assertLess(terminos_index, sintomas_index)
-        self.assertLess(terms_box_index, urgency_index)
+        self.assertLess(terminos_index, motivo_index)
+        self.assertLess(motivo_index, sintomas_index)
+
+    def test_apertura_presenta_terminos_antes_del_saludo(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        # start() ya no publica el saludo directamente: presenta el paso actual
+        # (terminos). El saludo vive en el render del paso motivo.
+        start_body = script[script.index("function start()"):script.index("function showSummary()")]
+        self.assertIn("askCurrentStep();", start_body)
+        self.assertNotIn("Soy SaludBot", start_body)
 
     def test_mensaje_final_informa_revision_profesional_destacada(self):
         script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
@@ -307,6 +313,47 @@ class SaludBotScriptTests(SimpleTestCase):
         self.assertIn("success-notice", script)
         self.assertIn("success-notice__title", script)
         self.assertIn("Importante", script)
+
+    def test_scroll_ancla_el_inicio_del_mensaje_del_bot(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("function scrollToLatest(target, sender)", script)
+        self.assertIn('block: sender === "bot" ? "start" : "nearest"', script)
+        # addMessage pasa el emisor al scroll para decidir el anclaje.
+        self.assertIn("scrollToLatest(row, sender);", script)
+
+    def test_cesfam_se_pregunta_antes_del_rut_y_nombre(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        centro_index = script.index('field: "centro_salud"')
+        rut_index = script.index('field: "rut"')
+        nombre_index = script.index('field: "nombre"')
+        sintomas_index = script.index('field: "detalle_sintomas"')
+
+        self.assertLess(sintomas_index, centro_index)
+        self.assertLess(centro_index, rut_index)
+        self.assertLess(centro_index, nombre_index)
+
+    def test_input_se_bloquea_en_pasos_de_botones(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("function esPasoDeBotones(step)", script)
+        # El gate se deriva del tipo de paso y se aplica al input y al boton.
+        self.assertIn("const gate = esPasoDeBotones(steps[state.index]);", script)
+        self.assertIn("input.disabled = gate;", script)
+
+    def test_paso_de_foto_oculto_por_flag(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("const ADJUNTO_FOTO_HABILITADO = false;", script)
+        # El skip del paso de foto respeta el flag.
+        self.assertIn("!ADJUNTO_FOTO_HABILITADO", script)
+
+    def test_no_hay_scroll_sin_emisor_que_pise_el_anclaje(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        # Ninguna llamada bare a scrollToLatest: todas pasan el emisor, para que
+        # ninguna caiga en "nearest" y pise el anclaje "start" del mensaje del bot.
+        self.assertNotIn("scrollToLatest();", script)
 
 
 @override_settings(DEBUG=False)
