@@ -44,14 +44,15 @@
 
   const steps = [
     {
-      field: "motivo",
-      prompt: "¿Por qué problema de salud necesitas consultar hoy?",
-      validate: minLength("Describe el motivo de consulta con al menos 3 caracteres.", 3),
-    },
-    {
       field: "acepta_terminos",
       prompt: "Antes de continuar, debes aceptar los Terminos y Condiciones de uso de la plataforma.",
       type: "terms",
+    },
+    {
+      field: "motivo",
+      prompt: "¿Por qué problema de salud necesitas consultar hoy?",
+      quick: true,
+      validate: minLength("Describe el motivo de consulta con al menos 3 caracteres.", 3),
     },
     {
       field: "detalle_sintomas",
@@ -314,6 +315,13 @@
       return;
     }
 
+    if (step.quick) {
+      const greetingName = userName ? `, ${escapeHtml(userName)}` : "";
+      const saludo = `Hola 👋 Soy SaludBot${greetingName}, asistente virtual de salud familiar. Te ayudaré a solicitar una atención de salud médica y a recopilar información necesaria para que el equipo revise tu caso. ¿Qué problema de salud necesitas consultar hoy?`;
+      showTyping(() => addMessage(`${saludo}${quickActions()}`, "bot", { html: true }));
+      return;
+    }
+
     let prompt = step.prompt;
     if (step.options) {
       prompt = `${formatPromptText(prompt)}${renderOptionButtons(step.options)}`;
@@ -412,12 +420,7 @@
   }
 
   function start() {
-    const greetingName = userName ? `, ${escapeHtml(userName)}` : "";
-    addMessage(
-      `Hola 👋 Soy SaludBot${greetingName}, asistente virtual de salud familiar. Te ayudaré a solicitar una atención de salud médica y a recopilar información necesaria para que el equipo revise tu caso. ¿Qué problema de salud necesitas consultar hoy?${quickActions()}`,
-      "bot",
-      { html: true }
-    );
+    askCurrentStep();
     resetInactivityTimer();
   }
 

@@ -284,18 +284,24 @@ class DesglosePrioridadTests(TestCase):
 
 
 class SaludBotScriptTests(SimpleTestCase):
-    def test_terminos_se_piden_despues_del_aviso_de_urgencia(self):
+    def test_terminos_es_la_primera_pantalla(self):
         script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
 
-        motivo_index = script.index('field: "motivo"')
         terminos_index = script.index('field: "acepta_terminos"')
+        motivo_index = script.index('field: "motivo"')
         sintomas_index = script.index('field: "detalle_sintomas"')
-        urgency_index = script.index("function renderUrgencyWarning()")
-        terms_box_index = script.index("function renderTermsAcceptance()")
 
-        self.assertLess(motivo_index, terminos_index)
-        self.assertLess(terminos_index, sintomas_index)
-        self.assertLess(terms_box_index, urgency_index)
+        self.assertLess(terminos_index, motivo_index)
+        self.assertLess(motivo_index, sintomas_index)
+
+    def test_apertura_presenta_terminos_antes_del_saludo(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        # start() ya no publica el saludo directamente: presenta el paso actual
+        # (terminos). El saludo vive en el render del paso motivo.
+        start_body = script[script.index("function start()"):script.index("function showSummary()")]
+        self.assertIn("askCurrentStep();", start_body)
+        self.assertNotIn("Soy SaludBot", start_body)
 
     def test_mensaje_final_informa_revision_profesional_destacada(self):
         script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
