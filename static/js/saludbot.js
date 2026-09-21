@@ -293,7 +293,6 @@
       input.disabled = gate;
       submitButton.disabled = gate;
       callback();
-      scrollToLatest();
       if (!gate) input.focus();
     }, 520);
   }
@@ -423,7 +422,6 @@
       row.remove();
       state.waiting = false;
       addMessage(renderUrgencyWarning(), "bot", { html: true });
-      scrollToLatest();
     }, 520);
   }
 
@@ -483,7 +481,6 @@
     input.placeholder = "Escribe tu respuesta...";
     input.value = "";
     start();
-    scrollToLatest();
   }
 
   function resetByInactivity() {

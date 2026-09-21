@@ -349,6 +349,12 @@ class SaludBotScriptTests(SimpleTestCase):
         # El skip del paso de foto respeta el flag.
         self.assertIn("!ADJUNTO_FOTO_HABILITADO", script)
 
+    def test_no_hay_scroll_sin_emisor_que_pise_el_anclaje(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        # Ninguna llamada bare a scrollToLatest: todas pasan el emisor, para que
+        # ninguna caiga en "nearest" y pise el anclaje "start" del mensaje del bot.
+        self.assertNotIn("scrollToLatest();", script)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):
