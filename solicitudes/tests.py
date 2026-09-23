@@ -372,6 +372,19 @@ class SaludBotScriptTests(SimpleTestCase):
         self.assertIn("Problemas o dificultad para hablar (posible ACV)", card)
         self.assertIn("*4141", card)
 
+    def test_rama_receta_omite_urgencia_y_pregunta_medicamento(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("function esMotivoReceta(", script)
+        self.assertIn("state.esReceta", script)
+        self.assertIn("medicamento(s) necesitas repetir", script)
+        # askCurrentStep resuelve prompt cuando es funcion (para el detalle condicional).
+        self.assertIn('typeof step.prompt === "function"', script)
+        # En submitValue, tras el motivo, Receta salta la tarjeta de urgencia.
+        submit = script[script.index("function submitValue("):script.index("function handlePhotoFile(")]
+        self.assertIn("state.esReceta", submit)
+        self.assertIn("showUrgencyWarning()", submit)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):

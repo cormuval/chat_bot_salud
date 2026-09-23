@@ -41,6 +41,7 @@
     waiting: false,
     complete: false,
     submitting: false,
+    esReceta: false,
   };
 
   const steps = [
@@ -57,12 +58,26 @@
     },
     {
       field: "detalle_sintomas",
-      prompt: `Gracias. Para ayudarte mejor, cuéntanos un poco más:
+      prompt() {
+        if (state.esReceta) {
+          return "¿Qué medicamento(s) necesitas repetir? Indica el nombre y la dosis si la conoces.";
+        }
+        return `Gracias. Para ayudarte mejor, cuéntanos un poco más:
 * ¿Qué síntomas tienes?
 * ¿Cuándo comenzaron?
 * ¿Han empeorado, mejorado o siguen igual?
-* ¿Has recibido atención médica por este problema?`,
-      validate: minLength("Describe tus sintomas con al menos 20 caracteres para orientar mejor la atencion.", 20),
+* ¿Has recibido atención médica por este problema?`;
+      },
+      validate(value) {
+        if (state.esReceta) {
+          return value.trim().length >= 3
+            ? null
+            : "Indica el medicamento que necesitas repetir (al menos 3 caracteres).";
+        }
+        return value.trim().length >= 20
+          ? null
+          : "Describe tus sintomas con al menos 20 caracteres para orientar mejor la atencion.";
+      },
     },
     {
       field: "centro_salud",
@@ -193,6 +208,10 @@
 
   function minLength(message, length) {
     return (value) => (value.trim().length >= length ? null : message);
+  }
+
+  function esMotivoReceta(valor) {
+    return String(valor).trim().toLowerCase() === "receta";
   }
 
   function validateFullName(value) {
@@ -329,7 +348,7 @@
       return;
     }
 
-    let prompt = step.prompt;
+    let prompt = typeof step.prompt === "function" ? step.prompt() : step.prompt;
     if (step.options) {
       prompt = `${formatPromptText(prompt)}${renderOptionButtons(step.options)}`;
     } else {
@@ -478,6 +497,7 @@
     state.selectedCentroName = centroInicial;
     state.waiting = false;
     state.submitting = false;
+    state.esReceta = false;
     messages.innerHTML = "";
     input.disabled = false;
     submitButton.disabled = false;
@@ -498,6 +518,7 @@
     state.selectedCentroName = centroInicial;
     state.waiting = false;
     state.submitting = false;
+    state.esReceta = false;
     messages.innerHTML = "";
     input.disabled = false;
     submitButton.disabled = false;
@@ -614,10 +635,17 @@
     if (step.field === "centro_salud") {
       state.selectedCentroName = displayValue;
     }
+    if (step.field === "motivo") {
+      state.esReceta = esMotivoReceta(value);
+    }
     state.index += 1;
 
     if (step.field === "motivo") {
-      showUrgencyWarning();
+      if (state.esReceta) {
+        askCurrentStep();
+      } else {
+        showUrgencyWarning();
+      }
       return;
     }
 
