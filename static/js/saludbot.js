@@ -341,12 +341,13 @@
 
   function quickActions() {
     const actions = [
-      "Tengo Fiebre",
+      "Fiebre",
       "Dolor o malestar",
       "Problemas respiratorios",
       "Vómitos o diarrea",
       "Problemas al orinar",
       "Otros motivos",
+      "Receta",
     ];
     return `
       <div class="quick-actions" aria-label="Opciones rapidas">

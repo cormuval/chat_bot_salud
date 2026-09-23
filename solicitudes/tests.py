@@ -355,6 +355,16 @@ class SaludBotScriptTests(SimpleTestCase):
         # ninguna caiga en "nearest" y pise el anclaje "start" del mensaje del bot.
         self.assertNotIn("scrollToLatest();", script)
 
+    def test_botones_de_motivo_renombran_fiebre_y_agregan_receta(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        quick = script[script.index("function quickActions()"):script.index("function renderOptionButtons(")]
+
+        self.assertIn('"Fiebre"', quick)
+        self.assertNotIn('"Tengo Fiebre"', quick)
+        self.assertIn('"Receta"', quick)
+        # Receta va al final, despues de "Otros motivos".
+        self.assertLess(quick.index('"Otros motivos"'), quick.index('"Receta"'))
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):
