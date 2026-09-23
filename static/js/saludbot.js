@@ -403,8 +403,10 @@
           <li>Convulsiones</li>
           <li>Sangrado abundante</li>
           <li>Debilidad repentina de un brazo o una pierna</li>
+          <li>Problemas o dificultad para hablar (posible ACV)</li>
         </ul>
         <p>Tu situación podría requerir atención inmediata. Te recomendamos acudir a SAPU o Servicio de Urgencia del Hospital; si no puedes acudir por tus propios medios, solicita una ambulancia al número 131.</p>
+        <p>Si tienes pensamientos de hacerte daño o quitarte la vida, llama al Fono de prevención del suicidio *4141 (gratuito) o acude al servicio de urgencia más cercano.</p>
         <div class="summary-actions urgency-actions">
           <button class="summary-action urgency-action urgency-action--continue" type="button" data-urgency-action="continue">Continuar</button>
           <button class="summary-action urgency-action urgency-action--stop" type="button" data-urgency-action="stop">Terminar solicitud</button>

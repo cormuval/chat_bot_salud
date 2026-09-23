@@ -365,6 +365,13 @@ class SaludBotScriptTests(SimpleTestCase):
         # Receta va al final, despues de "Otros motivos".
         self.assertLess(quick.index('"Otros motivos"'), quick.index('"Receta"'))
 
+    def test_alerta_urgencia_incluye_acv_y_salud_mental(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        card = script[script.index("function renderUrgencyWarning()"):script.index("function showUrgencyWarning()")]
+
+        self.assertIn("Problemas o dificultad para hablar (posible ACV)", card)
+        self.assertIn("*4141", card)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):
