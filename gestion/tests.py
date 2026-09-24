@@ -2772,3 +2772,75 @@ class PalabrasPrioridadUiTests(TestCase):
         self.assertEqual(
             PalabraClavePrioridad.objects.filter(texto_normalizado="fiebre").count(), 1
         )
+
+
+class CupoDiarioTests(TestCase):
+    def _perfil_selector(self, centro):
+        usuario = User.objects.create_user("sel@x.cl", "sel@x.cl")
+        return PerfilUsuario.objects.create(
+            usuario=usuario, rol=PerfilUsuario.Rol.SELECTOR, centro=centro
+        )
+
+    def _aceptar(self, centro, cuando):
+        gestion = crear_solicitud_base(centro_salud=centro).gestion
+        gestion.decision = Gestion.Decision.ACEPTADA
+        gestion.fecha_decision = cuando
+        gestion.save()
+        return gestion
+
+    def test_cupo_unico_por_centro_y_fecha(self):
+        from gestion.models import CupoDiario
+        centro = Centro.objects.get(pk=620)
+        hoy = timezone.localdate()
+        CupoDiario.objects.create(centro=centro, fecha=hoy, cupos_iniciales=10)
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                CupoDiario.objects.create(centro=centro, fecha=hoy, cupos_iniciales=5)
+
+    def test_cupos_del_alcance_calcula_disponibles(self):
+        from gestion.models import CupoDiario
+        from gestion.cupos import cupos_del_alcance
+        centro = Centro.objects.get(pk=620)
+        otro = Centro.objects.get(pk=615)
+        hoy = timezone.localdate()
+        ahora = timezone.now()
+        CupoDiario.objects.create(centro=centro, fecha=hoy, cupos_iniciales=10)
+        self._aceptar(centro, ahora)
+        self._aceptar(centro, ahora)
+        # ruido que NO debe contar:
+        crear_solicitud_base(centro_salud=centro)  # pendiente
+        rechazada = crear_solicitud_base(centro_salud=centro).gestion
+        rechazada.decision = Gestion.Decision.RECHAZADA
+        rechazada.fecha_decision = ahora
+        rechazada.save()
+        self._aceptar(centro, ahora - timedelta(days=1))  # aceptada ayer
+        self._aceptar(otro, ahora)  # aceptada hoy en otro centro
+
+        perfil = self._perfil_selector(centro)
+        filas = cupos_del_alcance(perfil, hoy)
+        fila = next(f for f in filas if f["centro"].pk == centro.pk)
+        self.assertEqual(fila["iniciales"], 10)
+        self.assertEqual(fila["aceptadas"], 2)
+        self.assertEqual(fila["disponibles"], 8)
+
+    def test_disponibles_none_cuando_no_hay_registro(self):
+        from gestion.cupos import cupos_del_alcance
+        centro = Centro.objects.get(pk=620)
+        perfil = self._perfil_selector(centro)
+        filas = cupos_del_alcance(perfil, timezone.localdate())
+        fila = next(f for f in filas if f["centro"].pk == centro.pk)
+        self.assertIsNone(fila["iniciales"])
+        self.assertIsNone(fila["disponibles"])
+
+    def test_conteo_aceptadas_no_usa_convert_tz(self):
+        from gestion.reportes import limites_datetime
+        centro = Centro.objects.get(pk=620)
+        hoy = timezone.localdate()
+        inicio, fin = limites_datetime(hoy, hoy)
+        qs = Gestion.objects.filter(
+            solicitud__centro_salud=centro,
+            decision=Gestion.Decision.ACEPTADA,
+            fecha_decision__gte=inicio,
+            fecha_decision__lt=fin,
+        )
+        self.assertNotIn("CONVERT_TZ", str(qs.query))

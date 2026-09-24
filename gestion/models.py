@@ -736,3 +736,31 @@ class RegistroContacto(models.Model):
         if accion == Gestion.AccionContacto.WHATSAPP:
             return cls.Canal.WHATSAPP
         return cls.Canal.LLAMADA
+
+
+class CupoDiario(models.Model):
+    """Cupos medicos iniciales disponibles que el selector carga por centro y dia.
+    Guarda solo el numero cargado; los disponibles se calculan en vivo (ver
+    gestion/cupos.py)."""
+
+    centro = models.ForeignKey(
+        Centro, on_delete=models.PROTECT, related_name="cupos_diarios"
+    )
+    fecha = models.DateField()
+    cupos_iniciales = models.PositiveSmallIntegerField()
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("centro", "fecha")
+        ordering = ["-fecha", "centro__centro"]
+
+    def __str__(self):
+        return f"{self.centro} {self.fecha}: {self.cupos_iniciales}"
