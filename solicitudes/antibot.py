@@ -51,9 +51,16 @@ def ip_cliente(request):
 
 
 def rate_limit_excedido(request):
-    """Cuenta cada intento por IP en el cache; True si supera RATE_LIMITE en la ventana."""
+    """Cuenta cada intento por IP en el cache; True si supera RATE_LIMITE en la ventana.
+    Usa add+incr: el TTL se fija al crear la clave (ventana fija, no se renueva en cada
+    intento) y el incremento es atomico."""
     ip = ip_cliente(request) or "desconocida"
     clave = f"antibot:rate:{ip}"
-    intentos = cache.get(clave, 0) + 1
-    cache.set(clave, intentos, RATE_VENTANA_SEG)
+    cache.add(clave, 0, RATE_VENTANA_SEG)
+    try:
+        intentos = cache.incr(clave)
+    except ValueError:
+        # La clave expiro entre el add y el incr: reseembrar y reintentar.
+        cache.add(clave, 0, RATE_VENTANA_SEG)
+        intentos = cache.incr(clave)
     return intentos > RATE_LIMITE
