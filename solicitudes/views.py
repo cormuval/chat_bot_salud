@@ -5,6 +5,12 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
+from .antibot import (
+    firmar_token_tiempo,
+    honeypot_activado,
+    rate_limit_excedido,
+    validar_token_tiempo,
+)
 from .models import Solicitud
 from .priorizacion import calcular_prioridad
 from .validators import formatear_rut_sin_puntos, formatear_telefono_con_codigo_pais
@@ -21,6 +27,7 @@ def saludbot(request):
         {
             "nombre_cesfam": request.GET.get("cesfam", "Corporacion Municipal de Valparaiso"),
             "user_name": request.GET.get("user_name", ""),
+            "token_tiempo": firmar_token_tiempo(),
         },
     )
 
@@ -81,10 +88,52 @@ def _normalizar_payload(payload):
     return data
 
 
+def _respuesta_fingida():
+    """201 con cuerpo plausible pero sin crear Solicitud: no revela la deteccion."""
+    return JsonResponse(
+        {
+            "ok": True,
+            "id_solicitud": 0,
+            "priorizacion_solicitud": "",
+            "puntaje_prioridad": 0,
+            "resumen": {
+                "nombre": "", "rut": "", "edad": "", "telefono": "",
+                "centro_salud": "", "centro_salud_nombre": "",
+                "motivo": "", "detalle_motivo": "",
+            },
+        },
+        status=201,
+    )
+
+
 @require_POST
 def crear_solicitud(request):
+    if rate_limit_excedido(request):
+        return JsonResponse(
+            {"ok": False, "errors": ["Demasiadas solicitudes desde tu conexion, intenta mas tarde."]},
+            status=429,
+        )
     try:
-        payload = _normalizar_payload(_json_body(request))
+        body = _json_body(request)
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "errors": exc.messages}, status=400)
+
+    if honeypot_activado(body):
+        return _respuesta_fingida()
+
+    motivo_token = validar_token_tiempo(body.get("token_tiempo"))
+    if motivo_token == "vencido":
+        return JsonResponse(
+            {"ok": False, "errors": ["Tu sesion expiro. Recarga la pagina e intenta nuevamente."]},
+            status=400,
+        )
+    if motivo_token is not None:
+        return _respuesta_fingida()
+
+    body.pop("token_tiempo", None)
+    body.pop("apellido_2", None)
+    try:
+        payload = _normalizar_payload(body)
         payload["credendencial_cuidador_discapacidad"] = _bool_from_payload(
             payload.get("credendencial_cuidador_discapacidad")
         )

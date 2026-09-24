@@ -15,7 +15,13 @@ from .validators import formatear_telefono_con_codigo_pais, validar_rut_chileno,
 
 
 class SolicitudTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
     def valid_payload(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo
         return {
             "nombre": "Ana Maria Perez",
             "rut": "25747311-2",
@@ -28,11 +34,15 @@ class SolicitudTests(TestCase):
             "acepta_terminos": True,
             "motivo": "consulta medica",
             "detalle_motivo": "dolor de garganta hace tres dias",
+            "token_tiempo": firmar_token_tiempo(ts=time.time() - 30),
+            "apellido_2": "",
         }
 
     def test_creacion_solicitud_valida(self):
         payload = self.valid_payload()
         payload["centro_salud_id"] = payload.pop("centro_salud")
+        payload.pop("token_tiempo", None)
+        payload.pop("apellido_2", None)
         prioridad = calcular_prioridad(payload)
         payload["priorizacion_solicitud"] = prioridad["clasificacion"]
         payload["puntaje_prioridad"] = prioridad["puntaje"]
@@ -154,6 +164,8 @@ class SolicitudTests(TestCase):
                     "motivo": "Tengo fiebre",
                     "detalle_motivo": "Fiebre desde ayer con dolor de cuerpo",
                     "acepta_terminos": True,
+                    "token_tiempo": __import__("solicitudes.antibot", fromlist=["firmar_token_tiempo"]).firmar_token_tiempo(ts=__import__("time").time() - 30),
+                    "apellido_2": "",
                 }
             ),
             content_type="application/json",
@@ -168,6 +180,66 @@ class SolicitudTests(TestCase):
         self.assertEqual(solicitud.sexo, "N")
         self.assertEqual(solicitud.puntaje_prioridad, 1)
         self.assertEqual(solicitud.priorizacion_solicitud, "BAJA")
+
+    def test_endpoint_honeypot_finge_exito_sin_guardar(self):
+        payload = self.valid_payload()
+        payload["apellido_2"] = "http://spam.example"
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_token_ausente_no_guarda(self):
+        payload = self.valid_payload()
+        payload.pop("token_tiempo")
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_token_muy_rapido_no_guarda(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo
+        payload = self.valid_payload()
+        payload["token_tiempo"] = firmar_token_tiempo(ts=time.time())  # instantaneo
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_token_vencido_pide_recargar(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo
+        payload = self.valid_payload()
+        payload["token_tiempo"] = firmar_token_tiempo(ts=time.time() - (31 * 60))
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_rate_limit_devuelve_429(self):
+        from solicitudes.antibot import RATE_LIMITE
+        ultimo = None
+        for _ in range(RATE_LIMITE + 1):
+            ultimo = self.client.post(
+                reverse("crear_solicitud"),
+                data=json.dumps(self.valid_payload()),
+                content_type="application/json",
+            )
+        self.assertEqual(ultimo.status_code, 429)
 
     def test_endpoint_rechaza_sin_nombre(self):
         payload = self.valid_payload()
