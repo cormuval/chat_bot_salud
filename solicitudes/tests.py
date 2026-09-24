@@ -453,3 +453,62 @@ class PriorizacionDesdeBDTests(TestCase):
     def test_palabra_nueva_aplica_sin_tocar_codigo(self):
         PalabraClavePrioridad.objects.create(texto="mareo", nivel="URGENTE")
         self.assertEqual(calcular_prioridad(self._datos("tengo mareo"))["clasificacion"], "ALTA")
+
+
+class AntibotHelpersTests(SimpleTestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def tearDown(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_token_valido_round_trip(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo, validar_token_tiempo, SEGUNDOS_MINIMOS
+        token = firmar_token_tiempo(ts=time.time() - (SEGUNDOS_MINIMOS + 5))
+        self.assertIsNone(validar_token_tiempo(token))
+
+    def test_token_ausente_o_firma_invalida(self):
+        from solicitudes.antibot import validar_token_tiempo
+        self.assertEqual(validar_token_tiempo(""), "invalido")
+        self.assertEqual(validar_token_tiempo(None), "invalido")
+        self.assertEqual(validar_token_tiempo("esto-no-es-un-token"), "invalido")
+
+    def test_token_muy_rapido(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo, validar_token_tiempo
+        token = firmar_token_tiempo(ts=time.time())  # recien emitido
+        self.assertEqual(validar_token_tiempo(token), "muy_rapido")
+
+    def test_token_vencido(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo, validar_token_tiempo
+        token = firmar_token_tiempo(ts=time.time() - (31 * 60))
+        self.assertEqual(validar_token_tiempo(token), "vencido")
+
+    def test_honeypot(self):
+        from solicitudes.antibot import honeypot_activado
+        self.assertFalse(honeypot_activado({}))
+        self.assertFalse(honeypot_activado({"apellido_2": ""}))
+        self.assertFalse(honeypot_activado({"apellido_2": "   "}))
+        self.assertTrue(honeypot_activado({"apellido_2": "http://spam"}))
+
+    def test_ip_cliente_prefiere_x_forwarded_for(self):
+        from django.test import RequestFactory
+        from solicitudes.antibot import ip_cliente
+        req = RequestFactory().post(
+            "/api/solicitudes/", HTTP_X_FORWARDED_FOR="1.2.3.4, 5.6.7.8", REMOTE_ADDR="9.9.9.9"
+        )
+        self.assertEqual(ip_cliente(req), "1.2.3.4")
+        req2 = RequestFactory().post("/api/solicitudes/", REMOTE_ADDR="9.9.9.9")
+        self.assertEqual(ip_cliente(req2), "9.9.9.9")
+
+    def test_rate_limit_bloquea_tras_el_limite(self):
+        from django.test import RequestFactory
+        from solicitudes.antibot import rate_limit_excedido, RATE_LIMITE
+        req = RequestFactory().post("/api/solicitudes/", REMOTE_ADDR="7.7.7.7")
+        for _ in range(RATE_LIMITE):
+            self.assertFalse(rate_limit_excedido(req))
+        self.assertTrue(rate_limit_excedido(req))
