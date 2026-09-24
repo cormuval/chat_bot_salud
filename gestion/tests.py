@@ -2844,3 +2844,80 @@ class CupoDiarioTests(TestCase):
             fecha_decision__lt=fin,
         )
         self.assertNotIn("CONVERT_TZ", str(qs.query))
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GuardarCupoTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.otro = Centro.objects.get(pk=615)
+        self.user = User.objects.create_user("sel@x.cl", "sel@x.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.user, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro
+        )
+        self.client.force_login(self.user)
+
+    def test_selector_carga_y_edita_cupo(self):
+        from gestion.models import CupoDiario
+        hoy = timezone.localdate()
+        r = self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.centro.pk, "cupos_iniciales": 12},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(
+            CupoDiario.objects.get(centro=self.centro, fecha=hoy).cupos_iniciales, 12
+        )
+        self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.centro.pk, "cupos_iniciales": 7},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(
+            CupoDiario.objects.filter(centro=self.centro, fecha=hoy).count(), 1
+        )
+        self.assertEqual(
+            CupoDiario.objects.get(centro=self.centro, fecha=hoy).cupos_iniciales, 7
+        )
+
+    def test_no_carga_centro_fuera_de_alcance(self):
+        from gestion.models import CupoDiario
+        r = self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.otro.pk, "cupos_iniciales": 5},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("sin-acceso", r["Location"])
+        self.assertFalse(CupoDiario.objects.filter(centro=self.otro).exists())
+
+    def test_rol_sin_permiso_no_carga(self):
+        from gestion.models import CupoDiario
+        u2 = User.objects.create_user("sup@x.cl", "sup@x.cl")
+        PerfilUsuario.objects.create(
+            usuario=u2, rol=PerfilUsuario.Rol.SUPERVISOR_CENTRO, centro=self.centro
+        )
+        self.client.force_login(u2)
+        r = self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.centro.pk, "cupos_iniciales": 5},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertIn("sin-acceso", r["Location"])
+        self.assertFalse(CupoDiario.objects.filter(centro=self.centro).exists())
+
+    def test_selector_lista_incluye_cupos_en_contexto(self):
+        from gestion.models import CupoDiario
+        CupoDiario.objects.create(
+            centro=self.centro, fecha=timezone.localdate(), cupos_iniciales=9
+        )
+        r = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("cupos", r.context)
+        self.assertTrue(
+            any(
+                f["centro"].pk == self.centro.pk and f["iniciales"] == 9
+                for f in r.context["cupos"]
+            )
+        )

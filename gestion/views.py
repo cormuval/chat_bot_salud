@@ -7,16 +7,19 @@ from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from .cupos import cupos_del_alcance
 from .forms import AccionComunicadorForm, DecisionSelectorForm, WhatsappComunicadorForm
 from .mensajes import armar_mensaje_whatsapp, url_whatsapp_para_gestion
-from .models import Gestion
+from .models import CupoDiario, Gestion
 from .permisos import (
     gestion_alcanzable_o_404,
     obtener_perfil_activo,
     puede_administrar_perfiles,
+    puede_cargar_cupos,
     puede_escribir_comunicador,
     puede_escribir_selector,
     puede_usar_comunicador,
@@ -179,6 +182,8 @@ def selector_lista(request):
     else:
         seccion = "pendientes"
         gestiones = Gestion.objects.cola_selector(perfil)
+    puede_cargar = puede_cargar_cupos(perfil)
+    cupos = cupos_del_alcance(perfil, timezone.localdate()) if puede_cargar else []
     context = {
         "perfil": perfil,
         "gestiones": gestiones,
@@ -187,6 +192,8 @@ def selector_lista(request):
         "mostrar_no_aplica": mostrar_no_aplica,
         "conteos_selector": conteos_selector,
         "mostrar_columna_centro": mostrar_columna_centro,
+        "cupos": cupos,
+        "puede_cargar_cupos": puede_cargar,
     }
     if request.GET.get("fragmento") == "1":
         return render(request, "gestion/_tabla_selector.html", context)
@@ -290,6 +297,31 @@ def selector_detalle(request, pk):
             "texto_correccion_fila": _texto_correccion_selector(gestion),
         },
     )
+
+
+@require_POST
+def guardar_cupo(request):
+    perfil = obtener_perfil_activo(request.user)
+    if perfil is None or not puede_cargar_cupos(perfil):
+        return redirect("gestion:sin_acceso")
+    try:
+        centro_id = int(request.POST.get("centro_id", ""))
+        cupos = int(request.POST.get("cupos_iniciales", ""))
+    except (TypeError, ValueError):
+        messages.error(request, "Indica un numero de cupos valido.")
+        return redirect("gestion:selector_lista")
+    if cupos < 0:
+        messages.error(request, "Los cupos no pueden ser negativos.")
+        return redirect("gestion:selector_lista")
+    if not perfil.centros_permitidos().filter(pk=centro_id).exists():
+        return redirect("gestion:sin_acceso")
+    CupoDiario.objects.update_or_create(
+        centro_id=centro_id,
+        fecha=timezone.localdate(),
+        defaults={"cupos_iniciales": cupos, "registrado_por": request.user},
+    )
+    messages.success(request, "Cupos actualizados.")
+    return redirect("gestion:selector_lista")
 
 
 @login_required
