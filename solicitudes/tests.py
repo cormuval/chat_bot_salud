@@ -355,6 +355,36 @@ class SaludBotScriptTests(SimpleTestCase):
         # ninguna caiga en "nearest" y pise el anclaje "start" del mensaje del bot.
         self.assertNotIn("scrollToLatest();", script)
 
+    def test_botones_de_motivo_renombran_fiebre_y_agregan_receta(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        quick = script[script.index("function quickActions()"):script.index("function renderOptionButtons(")]
+
+        self.assertIn('"Fiebre"', quick)
+        self.assertNotIn('"Tengo Fiebre"', quick)
+        self.assertIn('"Receta"', quick)
+        # Receta va al final, despues de "Otros motivos".
+        self.assertLess(quick.index('"Otros motivos"'), quick.index('"Receta"'))
+
+    def test_alerta_urgencia_incluye_acv_y_salud_mental(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        card = script[script.index("function renderUrgencyWarning()"):script.index("function showUrgencyWarning()")]
+
+        self.assertIn("Problemas o dificultad para hablar (posible ACV)", card)
+        self.assertIn("*4141", card)
+
+    def test_rama_receta_omite_urgencia_y_pregunta_medicamento(self):
+        script = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+
+        self.assertIn("function esMotivoReceta(", script)
+        self.assertIn("state.esReceta", script)
+        self.assertIn("medicamento(s) necesitas repetir", script)
+        # askCurrentStep resuelve prompt cuando es funcion (para el detalle condicional).
+        self.assertIn('typeof step.prompt === "function"', script)
+        # En submitValue, tras el motivo, Receta salta la tarjeta de urgencia.
+        submit = script[script.index("function submitValue("):script.index("function handlePhotoFile(")]
+        self.assertIn("state.esReceta", submit)
+        self.assertIn("showUrgencyWarning()", submit)
+
 
 @override_settings(DEBUG=False)
 class ErrorPagesTests(SimpleTestCase):
