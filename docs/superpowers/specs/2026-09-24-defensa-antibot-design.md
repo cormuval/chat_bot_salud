@@ -42,12 +42,14 @@ al inicio de `crear_solicitud` **antes** de construir la `Solicitud`:
 
 ## Capa 1 — Honeypot
 
-- Campo senuelo `apellido_2` en `saludbot.html`, oculto por CSS (fuera de
+- Campo senuelo `sitio_web` en `saludbot.html`, oculto por CSS (fuera de
   pantalla, `tabindex="-1"`, `autocomplete="off"`). Clase `.hp`:
-  `position:absolute; left:-9999px;` (invisible, sin ocupar espacio).
-- `saludbot.js` lee ese input y envia `apellido_2` en el payload; el usuario real
+  `position:absolute; left:-9999px;` (invisible, sin ocupar espacio). El nombre es
+  deliberadamente **no-personal** (no `apellido`/`nombre`/etc.) para que un
+  autocompletado/gestor de contrasenas no lo llene y cause una perdida silenciosa.
+- `saludbot.js` lee ese input y envia `sitio_web` en el payload; el usuario real
   nunca lo toca, asi que llega vacio.
-- `honeypot_activado(payload)` devuelve `True` si `apellido_2` tiene contenido
+- `honeypot_activado(payload)` devuelve `True` si `sitio_web` tiene contenido
   (tras `strip`). En ese caso `crear_solicitud` responde **201 fingido**
   (`{"ok": True, ...}` sin `Solicitud` creada) para no revelar la deteccion.
 
@@ -81,12 +83,17 @@ minimo de 8 s.
 
 ## Capa 3 — Rate limiting por IP
 
-- `ip_cliente(request)`: toma la IP real del primer valor de `X-Forwarded-For`
-  (detras de nginx); si no existe, cae a `REMOTE_ADDR`.
-- `rate_limit_excedido(request)`: cuenta los envios exitosos por IP en el cache de
-  Django dentro de una ventana. Limite: **10 solicitudes por IP cada 10 minutos**
-  (holgado: alguien puede registrar a varios familiares). Implementacion con clave
-  de cache por IP y ventana de 600 s.
+- `ip_cliente(request)`: toma la IP real del **ultimo** valor de `X-Forwarded-For`
+  (el que agrega nuestro nginx = la IP que conecto al proxy); los valores de la
+  izquierda los puede falsear el cliente, por eso no se usan. Si no existe XFF, cae
+  a `REMOTE_ADDR`. **Supuesto:** un unico proxy de confianza (nginx) delante; si se
+  agrega otro proxy/CDN, ajustar el indice del valor tomado.
+- `rate_limit_excedido(request)`: cuenta **cada intento** (POST) por IP en el cache
+  de Django dentro de una ventana (no solo los exitosos, para frenar floods de
+  payloads invalidos). Limite: **10 solicitudes por IP cada 10 minutos** (holgado:
+  alguien puede registrar a varios familiares). Implementacion con clave de cache
+  por IP y ventana de 600 s (`cache.add` fija el TTL una vez + `cache.incr` atomico:
+  ventana fija, no deslizante).
 - Excedido -> **429 Too Many Requests** con `{"ok": False, "errors": [...]}` y
   mensaje claro ("Demasiadas solicitudes desde tu conexion, intenta mas tarde").
   Es el unico caso visible, porque un usuario legitimo que lo tope necesita
@@ -109,12 +116,12 @@ migraria el cache a uno compartido (fuera de alcance de esta spec).
 
 ## Frontend
 
-- `saludbot.html`: agrega el input honeypot `apellido_2` (oculto) y el token de
+- `saludbot.html`: agrega el input honeypot `sitio_web` (oculto) y el token de
   tiempo (`data-token-tiempo` o input oculto con el valor del contexto).
 - `static/css/saludbot.css`: clase `.hp` que oculta el honeypot sin ocupar
   espacio.
 - `static/js/saludbot.js`: lee el token de tiempo y el honeypot del DOM y los
-  agrega al `payload` de `finish()` (`token_tiempo`, `apellido_2`). Maneja el
+  agrega al `payload` de `finish()` (`token_tiempo`, `sitio_web`). Maneja el
   nuevo caso 429 mostrando el mensaje (ya cubierto por el flujo de error
   existente).
 
