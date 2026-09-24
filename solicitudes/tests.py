@@ -35,14 +35,14 @@ class SolicitudTests(TestCase):
             "motivo": "consulta medica",
             "detalle_motivo": "dolor de garganta hace tres dias",
             "token_tiempo": firmar_token_tiempo(ts=time.time() - 30),
-            "apellido_2": "",
+            "sitio_web": "",
         }
 
     def test_creacion_solicitud_valida(self):
         payload = self.valid_payload()
         payload["centro_salud_id"] = payload.pop("centro_salud")
         payload.pop("token_tiempo", None)
-        payload.pop("apellido_2", None)
+        payload.pop("sitio_web", None)
         prioridad = calcular_prioridad(payload)
         payload["priorizacion_solicitud"] = prioridad["clasificacion"]
         payload["puntaje_prioridad"] = prioridad["puntaje"]
@@ -165,7 +165,7 @@ class SolicitudTests(TestCase):
                     "detalle_motivo": "Fiebre desde ayer con dolor de cuerpo",
                     "acepta_terminos": True,
                     "token_tiempo": __import__("solicitudes.antibot", fromlist=["firmar_token_tiempo"]).firmar_token_tiempo(ts=__import__("time").time() - 30),
-                    "apellido_2": "",
+                    "sitio_web": "",
                 }
             ),
             content_type="application/json",
@@ -183,7 +183,7 @@ class SolicitudTests(TestCase):
 
     def test_endpoint_honeypot_finge_exito_sin_guardar(self):
         payload = self.valid_payload()
-        payload["apellido_2"] = "http://spam.example"
+        payload["sitio_web"] = "http://spam.example"
         response = self.client.post(
             reverse("crear_solicitud"),
             data=json.dumps(payload),
@@ -191,6 +191,27 @@ class SolicitudTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.json()["ok"])
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_rate_limit_ignora_xff_izquierdo_falseado(self):
+        from solicitudes.antibot import RATE_LIMITE
+        ultimo = None
+        for i in range(RATE_LIMITE + 1):
+            ultimo = self.client.post(
+                reverse("crear_solicitud"),
+                data=json.dumps(self.valid_payload()),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR=f"10.0.0.{i}, 200.1.1.1",
+            )
+        self.assertEqual(ultimo.status_code, 429)
+
+    def test_endpoint_body_no_dict_devuelve_400(self):
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps([1, 2, 3]),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
         self.assertEqual(Solicitud.objects.count(), 0)
 
     def test_endpoint_token_ausente_no_guarda(self):
@@ -563,9 +584,9 @@ class AntibotHelpersTests(SimpleTestCase):
     def test_honeypot(self):
         from solicitudes.antibot import honeypot_activado
         self.assertFalse(honeypot_activado({}))
-        self.assertFalse(honeypot_activado({"apellido_2": ""}))
-        self.assertFalse(honeypot_activado({"apellido_2": "   "}))
-        self.assertTrue(honeypot_activado({"apellido_2": "http://spam"}))
+        self.assertFalse(honeypot_activado({"sitio_web": ""}))
+        self.assertFalse(honeypot_activado({"sitio_web": "   "}))
+        self.assertTrue(honeypot_activado({"sitio_web": "http://spam"}))
 
     def test_ip_cliente_prefiere_x_forwarded_for(self):
         from django.test import RequestFactory
@@ -573,7 +594,7 @@ class AntibotHelpersTests(SimpleTestCase):
         req = RequestFactory().post(
             "/api/solicitudes/", HTTP_X_FORWARDED_FOR="1.2.3.4, 5.6.7.8", REMOTE_ADDR="9.9.9.9"
         )
-        self.assertEqual(ip_cliente(req), "1.2.3.4")
+        self.assertEqual(ip_cliente(req), "5.6.7.8")
         req2 = RequestFactory().post("/api/solicitudes/", REMOTE_ADDR="9.9.9.9")
         self.assertEqual(ip_cliente(req2), "9.9.9.9")
 
@@ -589,7 +610,7 @@ class AntibotHelpersTests(SimpleTestCase):
 class AntibotFrontendTests(SimpleTestCase):
     def test_template_tiene_honeypot_y_token(self):
         html = Path(settings.BASE_DIR, "templates", "chat", "saludbot.html").read_text(encoding="utf-8")
-        self.assertIn('name="apellido_2"', html)
+        self.assertIn('name="sitio_web"', html)
         self.assertIn("data-token-tiempo=", html)
         self.assertIn("token_tiempo", html)  # el atributo referencia la variable de contexto
 
@@ -600,7 +621,7 @@ class AntibotFrontendTests(SimpleTestCase):
     def test_js_envia_token_y_honeypot_en_el_payload(self):
         js = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
         self.assertIn("token_tiempo:", js)
-        self.assertIn("apellido_2:", js)
+        self.assertIn("sitio_web:", js)
 
 
 class AntibotPaginaTests(TestCase):

@@ -118,6 +118,9 @@ def crear_solicitud(request):
     except ValidationError as exc:
         return JsonResponse({"ok": False, "errors": exc.messages}, status=400)
 
+    if not isinstance(body, dict):
+        return JsonResponse({"ok": False, "errors": ["Cuerpo de solicitud invalido."]}, status=400)
+
     if honeypot_activado(body):
         return _respuesta_fingida()
 
@@ -131,7 +134,7 @@ def crear_solicitud(request):
         return _respuesta_fingida()
 
     body.pop("token_tiempo", None)
-    body.pop("apellido_2", None)
+    body.pop("sitio_web", None)
     try:
         payload = _normalizar_payload(body)
         payload["credendencial_cuidador_discapacidad"] = _bool_from_payload(

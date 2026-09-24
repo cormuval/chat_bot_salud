@@ -39,14 +39,16 @@ def validar_token_tiempo(token):
 
 def honeypot_activado(body):
     """True si el campo senuelo llego con contenido (lo llena un bot, no el humano)."""
-    return bool(str(body.get("apellido_2") or "").strip())
+    return bool(str(body.get("sitio_web") or "").strip())
 
 
 def ip_cliente(request):
-    """IP real: primer valor de X-Forwarded-For (detras de nginx), o REMOTE_ADDR."""
+    """IP real detras de un unico proxy de confianza (nginx). El ultimo valor de
+    X-Forwarded-For lo agrega nuestro nginx (la IP que conecto al proxy); los de la
+    izquierda los puede falsear el cliente, por eso NO se usan. Sin XFF, REMOTE_ADDR."""
     reenviada = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if reenviada:
-        return reenviada.split(",")[0].strip()
+        return reenviada.split(",")[-1].strip()
     return request.META.get("REMOTE_ADDR", "")
 
 
