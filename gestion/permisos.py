@@ -42,6 +42,10 @@ def puede_escribir_selector(perfil):
     return perfil.rol in ROLES_SELECTOR
 
 
+def puede_cargar_cupos(perfil):
+    return perfil.rol in ROLES_SELECTOR
+
+
 def puede_escribir_comunicador(perfil):
     return perfil.rol in ROLES_COMUNICADOR
 

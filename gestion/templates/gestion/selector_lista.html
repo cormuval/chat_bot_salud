@@ -9,5 +9,35 @@
   </div>
 </section>
 
+{% if puede_cargar_cupos and cupos %}
+<section class="cupos-selector" aria-label="Cupos disponibles del dia">
+  <h3 class="cupos-selector__titulo">Cupos del dia</h3>
+  <div class="cupos-selector__grid">
+    {% for fila in cupos %}
+    <form class="cupo-card" method="post" action="{% url 'gestion:guardar_cupo' %}">
+      {% csrf_token %}
+      <input type="hidden" name="centro_id" value="{{ fila.centro.pk }}">
+      <div class="cupo-card__info">
+        <strong>{{ fila.centro }}</strong>
+        <span class="cupo-card__disponibles">
+          {% if fila.disponibles is None %}
+            Sin cargar
+          {% else %}
+            {{ fila.disponibles }} / {{ fila.iniciales }} disponibles
+          {% endif %}
+        </span>
+      </div>
+      <div class="cupo-card__form">
+        <label class="sr-only" for="cupo-{{ fila.centro.pk }}">Cupos iniciales de {{ fila.centro }}</label>
+        <input id="cupo-{{ fila.centro.pk }}" type="number" min="0" name="cupos_iniciales"
+               value="{{ fila.iniciales|default_if_none:'' }}">
+        <button type="submit">Guardar</button>
+      </div>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% include "gestion/_tabla_selector.html" %}
 {% endblock %}

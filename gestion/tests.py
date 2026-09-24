@@ -2772,3 +2772,162 @@ class PalabrasPrioridadUiTests(TestCase):
         self.assertEqual(
             PalabraClavePrioridad.objects.filter(texto_normalizado="fiebre").count(), 1
         )
+
+
+class CupoDiarioTests(TestCase):
+    def _perfil_selector(self, centro):
+        usuario = User.objects.create_user("sel@x.cl", "sel@x.cl")
+        return PerfilUsuario.objects.create(
+            usuario=usuario, rol=PerfilUsuario.Rol.SELECTOR, centro=centro
+        )
+
+    def _aceptar(self, centro, cuando):
+        gestion = crear_solicitud_base(centro_salud=centro).gestion
+        gestion.decision = Gestion.Decision.ACEPTADA
+        gestion.fecha_decision = cuando
+        gestion.save()
+        return gestion
+
+    def test_cupo_unico_por_centro_y_fecha(self):
+        from gestion.models import CupoDiario
+        centro = Centro.objects.get(pk=620)
+        hoy = timezone.localdate()
+        CupoDiario.objects.create(centro=centro, fecha=hoy, cupos_iniciales=10)
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                CupoDiario.objects.create(centro=centro, fecha=hoy, cupos_iniciales=5)
+
+    def test_cupos_del_alcance_calcula_disponibles(self):
+        from gestion.models import CupoDiario
+        from gestion.cupos import cupos_del_alcance
+        centro = Centro.objects.get(pk=620)
+        otro = Centro.objects.get(pk=615)
+        hoy = timezone.localdate()
+        ahora = timezone.now()
+        CupoDiario.objects.create(centro=centro, fecha=hoy, cupos_iniciales=10)
+        self._aceptar(centro, ahora)
+        self._aceptar(centro, ahora)
+        # ruido que NO debe contar:
+        crear_solicitud_base(centro_salud=centro)  # pendiente
+        rechazada = crear_solicitud_base(centro_salud=centro).gestion
+        rechazada.decision = Gestion.Decision.RECHAZADA
+        rechazada.fecha_decision = ahora
+        rechazada.save()
+        self._aceptar(centro, ahora - timedelta(days=1))  # aceptada ayer
+        self._aceptar(otro, ahora)  # aceptada hoy en otro centro
+
+        perfil = self._perfil_selector(centro)
+        filas = cupos_del_alcance(perfil, hoy)
+        fila = next(f for f in filas if f["centro"].pk == centro.pk)
+        self.assertEqual(fila["iniciales"], 10)
+        self.assertEqual(fila["aceptadas"], 2)
+        self.assertEqual(fila["disponibles"], 8)
+
+    def test_disponibles_none_cuando_no_hay_registro(self):
+        from gestion.cupos import cupos_del_alcance
+        centro = Centro.objects.get(pk=620)
+        perfil = self._perfil_selector(centro)
+        filas = cupos_del_alcance(perfil, timezone.localdate())
+        fila = next(f for f in filas if f["centro"].pk == centro.pk)
+        self.assertIsNone(fila["iniciales"])
+        self.assertIsNone(fila["disponibles"])
+
+    def test_conteo_aceptadas_no_usa_convert_tz(self):
+        from gestion.reportes import limites_datetime
+        centro = Centro.objects.get(pk=620)
+        hoy = timezone.localdate()
+        inicio, fin = limites_datetime(hoy, hoy)
+        qs = Gestion.objects.filter(
+            solicitud__centro_salud=centro,
+            decision=Gestion.Decision.ACEPTADA,
+            fecha_decision__gte=inicio,
+            fecha_decision__lt=fin,
+        )
+        self.assertNotIn("CONVERT_TZ", str(qs.query))
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class GuardarCupoTests(TestCase):
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.otro = Centro.objects.get(pk=615)
+        self.user = User.objects.create_user("sel@x.cl", "sel@x.cl")
+        self.perfil = PerfilUsuario.objects.create(
+            usuario=self.user, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro
+        )
+        self.client.force_login(self.user)
+
+    def test_selector_carga_y_edita_cupo(self):
+        from gestion.models import CupoDiario
+        hoy = timezone.localdate()
+        r = self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.centro.pk, "cupos_iniciales": 12},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(
+            CupoDiario.objects.get(centro=self.centro, fecha=hoy).cupos_iniciales, 12
+        )
+        self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.centro.pk, "cupos_iniciales": 7},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(
+            CupoDiario.objects.filter(centro=self.centro, fecha=hoy).count(), 1
+        )
+        self.assertEqual(
+            CupoDiario.objects.get(centro=self.centro, fecha=hoy).cupos_iniciales, 7
+        )
+
+    def test_no_carga_centro_fuera_de_alcance(self):
+        from gestion.models import CupoDiario
+        r = self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.otro.pk, "cupos_iniciales": 5},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("sin-acceso", r["Location"])
+        self.assertFalse(CupoDiario.objects.filter(centro=self.otro).exists())
+
+    def test_rol_sin_permiso_no_carga(self):
+        from gestion.models import CupoDiario
+        u2 = User.objects.create_user("sup@x.cl", "sup@x.cl")
+        PerfilUsuario.objects.create(
+            usuario=u2, rol=PerfilUsuario.Rol.SUPERVISOR_CENTRO, centro=self.centro
+        )
+        self.client.force_login(u2)
+        r = self.client.post(
+            "/selector/cupos/",
+            {"centro_id": self.centro.pk, "cupos_iniciales": 5},
+            HTTP_HOST="gestion.localhost",
+        )
+        self.assertIn("sin-acceso", r["Location"])
+        self.assertFalse(CupoDiario.objects.filter(centro=self.centro).exists())
+
+    def test_selector_lista_incluye_cupos_en_contexto(self):
+        from gestion.models import CupoDiario
+        CupoDiario.objects.create(
+            centro=self.centro, fecha=timezone.localdate(), cupos_iniciales=9
+        )
+        r = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("cupos", r.context)
+        self.assertTrue(
+            any(
+                f["centro"].pk == self.centro.pk and f["iniciales"] == 9
+                for f in r.context["cupos"]
+            )
+        )
+
+    def test_selector_lista_muestra_tarjeta_de_cupos(self):
+        from gestion.models import CupoDiario
+        CupoDiario.objects.create(
+            centro=self.centro, fecha=timezone.localdate(), cupos_iniciales=9
+        )
+        r = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(r, "Cupos del dia")
+        self.assertContains(r, 'name="cupos_iniciales"')
+        self.assertContains(r, "/selector/cupos/")

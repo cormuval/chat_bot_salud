@@ -20,6 +20,7 @@ urlpatterns = [
     path("palabras-prioridad/<int:pk>/", views_admin.palabra_editar, name="palabra_editar"),
     path("login/", views.login, name="login"),
     path("selector/", views.selector_lista, name="selector_lista"),
+    path("selector/cupos/", views.guardar_cupo, name="guardar_cupo"),
     path("selector/<int:pk>/", views.selector_detalle, name="selector_detalle"),
     path("comunicador/", views.comunicador_lista, name="comunicador_lista"),
     path("comunicador/<int:pk>/", views.comunicador_detalle, name="comunicador_detalle"),
