@@ -2921,3 +2921,13 @@ class GuardarCupoTests(TestCase):
                 for f in r.context["cupos"]
             )
         )
+
+    def test_selector_lista_muestra_tarjeta_de_cupos(self):
+        from gestion.models import CupoDiario
+        CupoDiario.objects.create(
+            centro=self.centro, fecha=timezone.localdate(), cupos_iniciales=9
+        )
+        r = self.client.get("/selector/", HTTP_HOST="gestion.localhost")
+        self.assertContains(r, "Cupos del dia")
+        self.assertContains(r, 'name="cupos_iniciales"')
+        self.assertContains(r, "/selector/cupos/")

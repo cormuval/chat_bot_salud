@@ -349,3 +349,36 @@ button:disabled {
 .auth-card p { margin: 0; color: var(--muted); }
 
 .admin-tiles { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+
+.cupos-selector {
+  margin: 0 0 18px;
+}
+.cupos-selector__titulo {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.cupos-selector__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.cupo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #D8E2EF);
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+.cupo-card__disponibles {
+  color: #145EA8;
+  font-weight: 700;
+}
+.cupo-card__form {
+  display: flex;
+  gap: 8px;
+}
+.cupo-card__form input[type="number"] {
+  width: 90px;
+}
