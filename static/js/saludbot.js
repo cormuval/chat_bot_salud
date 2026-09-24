@@ -9,6 +9,7 @@
 
   const centroInicial = root.dataset.centro || "Corporacion Municipal de Valparaiso";
   const userName = root.dataset.userName || "";
+  const tokenTiempo = root.dataset.tokenTiempo || "";
   const centrosSalud = [
     { id: "600", nombre: "Centro De Salud Familiar Laguna Verde" },
     { id: "605", nombre: "Centro De Salud Familiar Placilla (Valparaiso)" },
@@ -557,6 +558,8 @@
       acepta_terminos: state.data.acepta_terminos,
       motivo: state.data.motivo,
       detalle_motivo: state.data.detalle_sintomas,
+      token_tiempo: tokenTiempo,
+      sitio_web: (document.querySelector('input[name="sitio_web"]') || {}).value || "",
     };
 
     try {

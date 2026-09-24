@@ -15,7 +15,13 @@ from .validators import formatear_telefono_con_codigo_pais, validar_rut_chileno,
 
 
 class SolicitudTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
     def valid_payload(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo
         return {
             "nombre": "Ana Maria Perez",
             "rut": "25747311-2",
@@ -28,11 +34,15 @@ class SolicitudTests(TestCase):
             "acepta_terminos": True,
             "motivo": "consulta medica",
             "detalle_motivo": "dolor de garganta hace tres dias",
+            "token_tiempo": firmar_token_tiempo(ts=time.time() - 30),
+            "sitio_web": "",
         }
 
     def test_creacion_solicitud_valida(self):
         payload = self.valid_payload()
         payload["centro_salud_id"] = payload.pop("centro_salud")
+        payload.pop("token_tiempo", None)
+        payload.pop("sitio_web", None)
         prioridad = calcular_prioridad(payload)
         payload["priorizacion_solicitud"] = prioridad["clasificacion"]
         payload["puntaje_prioridad"] = prioridad["puntaje"]
@@ -154,6 +164,8 @@ class SolicitudTests(TestCase):
                     "motivo": "Tengo fiebre",
                     "detalle_motivo": "Fiebre desde ayer con dolor de cuerpo",
                     "acepta_terminos": True,
+                    "token_tiempo": __import__("solicitudes.antibot", fromlist=["firmar_token_tiempo"]).firmar_token_tiempo(ts=__import__("time").time() - 30),
+                    "sitio_web": "",
                 }
             ),
             content_type="application/json",
@@ -168,6 +180,87 @@ class SolicitudTests(TestCase):
         self.assertEqual(solicitud.sexo, "N")
         self.assertEqual(solicitud.puntaje_prioridad, 1)
         self.assertEqual(solicitud.priorizacion_solicitud, "BAJA")
+
+    def test_endpoint_honeypot_finge_exito_sin_guardar(self):
+        payload = self.valid_payload()
+        payload["sitio_web"] = "http://spam.example"
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_rate_limit_ignora_xff_izquierdo_falseado(self):
+        from solicitudes.antibot import RATE_LIMITE
+        ultimo = None
+        for i in range(RATE_LIMITE + 1):
+            ultimo = self.client.post(
+                reverse("crear_solicitud"),
+                data=json.dumps(self.valid_payload()),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR=f"10.0.0.{i}, 200.1.1.1",
+            )
+        self.assertEqual(ultimo.status_code, 429)
+
+    def test_endpoint_body_no_dict_devuelve_400(self):
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps([1, 2, 3]),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_token_ausente_no_guarda(self):
+        payload = self.valid_payload()
+        payload.pop("token_tiempo")
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_token_muy_rapido_no_guarda(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo
+        payload = self.valid_payload()
+        payload["token_tiempo"] = firmar_token_tiempo(ts=time.time())  # instantaneo
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_token_vencido_pide_recargar(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo
+        payload = self.valid_payload()
+        payload["token_tiempo"] = firmar_token_tiempo(ts=time.time() - (31 * 60))
+        response = self.client.post(
+            reverse("crear_solicitud"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Solicitud.objects.count(), 0)
+
+    def test_endpoint_rate_limit_devuelve_429(self):
+        from solicitudes.antibot import RATE_LIMITE
+        ultimo = None
+        for _ in range(RATE_LIMITE + 1):
+            ultimo = self.client.post(
+                reverse("crear_solicitud"),
+                data=json.dumps(self.valid_payload()),
+                content_type="application/json",
+            )
+        self.assertEqual(ultimo.status_code, 429)
 
     def test_endpoint_rechaza_sin_nombre(self):
         payload = self.valid_payload()
@@ -453,3 +546,86 @@ class PriorizacionDesdeBDTests(TestCase):
     def test_palabra_nueva_aplica_sin_tocar_codigo(self):
         PalabraClavePrioridad.objects.create(texto="mareo", nivel="URGENTE")
         self.assertEqual(calcular_prioridad(self._datos("tengo mareo"))["clasificacion"], "ALTA")
+
+
+class AntibotHelpersTests(SimpleTestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def tearDown(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_token_valido_round_trip(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo, validar_token_tiempo, SEGUNDOS_MINIMOS
+        token = firmar_token_tiempo(ts=time.time() - (SEGUNDOS_MINIMOS + 5))
+        self.assertIsNone(validar_token_tiempo(token))
+
+    def test_token_ausente_o_firma_invalida(self):
+        from solicitudes.antibot import validar_token_tiempo
+        self.assertEqual(validar_token_tiempo(""), "invalido")
+        self.assertEqual(validar_token_tiempo(None), "invalido")
+        self.assertEqual(validar_token_tiempo("esto-no-es-un-token"), "invalido")
+
+    def test_token_muy_rapido(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo, validar_token_tiempo
+        token = firmar_token_tiempo(ts=time.time())  # recien emitido
+        self.assertEqual(validar_token_tiempo(token), "muy_rapido")
+
+    def test_token_vencido(self):
+        import time
+        from solicitudes.antibot import firmar_token_tiempo, validar_token_tiempo
+        token = firmar_token_tiempo(ts=time.time() - (31 * 60))
+        self.assertEqual(validar_token_tiempo(token), "vencido")
+
+    def test_honeypot(self):
+        from solicitudes.antibot import honeypot_activado
+        self.assertFalse(honeypot_activado({}))
+        self.assertFalse(honeypot_activado({"sitio_web": ""}))
+        self.assertFalse(honeypot_activado({"sitio_web": "   "}))
+        self.assertTrue(honeypot_activado({"sitio_web": "http://spam"}))
+
+    def test_ip_cliente_prefiere_x_forwarded_for(self):
+        from django.test import RequestFactory
+        from solicitudes.antibot import ip_cliente
+        req = RequestFactory().post(
+            "/api/solicitudes/", HTTP_X_FORWARDED_FOR="1.2.3.4, 5.6.7.8", REMOTE_ADDR="9.9.9.9"
+        )
+        self.assertEqual(ip_cliente(req), "5.6.7.8")
+        req2 = RequestFactory().post("/api/solicitudes/", REMOTE_ADDR="9.9.9.9")
+        self.assertEqual(ip_cliente(req2), "9.9.9.9")
+
+    def test_rate_limit_bloquea_tras_el_limite(self):
+        from django.test import RequestFactory
+        from solicitudes.antibot import rate_limit_excedido, RATE_LIMITE
+        req = RequestFactory().post("/api/solicitudes/", REMOTE_ADDR="7.7.7.7")
+        for _ in range(RATE_LIMITE):
+            self.assertFalse(rate_limit_excedido(req))
+        self.assertTrue(rate_limit_excedido(req))
+
+
+class AntibotFrontendTests(SimpleTestCase):
+    def test_template_tiene_honeypot_y_token(self):
+        html = Path(settings.BASE_DIR, "templates", "chat", "saludbot.html").read_text(encoding="utf-8")
+        self.assertIn('name="sitio_web"', html)
+        self.assertIn("data-token-tiempo=", html)
+        self.assertIn("token_tiempo", html)  # el atributo referencia la variable de contexto
+
+    def test_css_oculta_el_honeypot(self):
+        css = Path(settings.BASE_DIR, "static", "css", "saludbot.css").read_text(encoding="utf-8")
+        self.assertIn(".hp", css)
+
+    def test_js_envia_token_y_honeypot_en_el_payload(self):
+        js = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        self.assertIn("token_tiempo:", js)
+        self.assertIn("sitio_web:", js)
+
+
+class AntibotPaginaTests(TestCase):
+    def test_pagina_saludbot_emite_token_de_tiempo(self):
+        response = self.client.get(reverse("saludbot"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-token-tiempo=")
