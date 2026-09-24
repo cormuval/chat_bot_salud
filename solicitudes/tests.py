@@ -584,3 +584,27 @@ class AntibotHelpersTests(SimpleTestCase):
         for _ in range(RATE_LIMITE):
             self.assertFalse(rate_limit_excedido(req))
         self.assertTrue(rate_limit_excedido(req))
+
+
+class AntibotFrontendTests(SimpleTestCase):
+    def test_template_tiene_honeypot_y_token(self):
+        html = Path(settings.BASE_DIR, "templates", "chat", "saludbot.html").read_text(encoding="utf-8")
+        self.assertIn('name="apellido_2"', html)
+        self.assertIn("data-token-tiempo=", html)
+        self.assertIn("token_tiempo", html)  # el atributo referencia la variable de contexto
+
+    def test_css_oculta_el_honeypot(self):
+        css = Path(settings.BASE_DIR, "static", "css", "saludbot.css").read_text(encoding="utf-8")
+        self.assertIn(".hp", css)
+
+    def test_js_envia_token_y_honeypot_en_el_payload(self):
+        js = Path(settings.BASE_DIR, "static", "js", "saludbot.js").read_text(encoding="utf-8")
+        self.assertIn("token_tiempo:", js)
+        self.assertIn("apellido_2:", js)
+
+
+class AntibotPaginaTests(TestCase):
+    def test_pagina_saludbot_emite_token_de_tiempo(self):
+        response = self.client.get(reverse("saludbot"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-token-tiempo=")

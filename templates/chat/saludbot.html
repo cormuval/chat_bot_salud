@@ -12,6 +12,7 @@
     class="saludbot"
     data-centro="{{ nombre_cesfam|default:'Corporacion Municipal de Valparaiso' }}"
     data-user-name="{{ user_name|default:'' }}"
+    data-token-tiempo="{{ token_tiempo }}"
   >
     <header class="saludbot__header">
       <div class="brand">
@@ -41,6 +42,7 @@
 
     <form id="chatForm" class="composer" autocomplete="off">
       {% csrf_token %}
+      <input class="hp" type="text" name="apellido_2" tabindex="-1" autocomplete="off" aria-hidden="true">
       <label class="sr-only" for="chatInput">Escribe tu respuesta</label>
       <input id="chatInput" type="text" inputmode="text" placeholder="Escribe tu respuesta..." autocomplete="off">
       <button type="submit" aria-label="Enviar mensaje">

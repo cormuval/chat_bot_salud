@@ -563,6 +563,14 @@ input {
   border: 0;
 }
 
+.hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
 @keyframes pulse {
   0%,
   100% {
