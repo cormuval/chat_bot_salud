@@ -53,6 +53,10 @@ button { cursor: pointer; }
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
+  /* La columna es minmax(0, 1fr) (no auto): asi un contenido ancho (p. ej. una
+     tabla con texto largo sin espacios) no puede reventar el grid y colapsar la
+     fila de contenido. Va junto con overflow-wrap en las celdas de la tabla. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .gestion-header {
@@ -97,7 +101,7 @@ button { cursor: pointer; }
 .page-title p { margin: 4px 0 0; color: var(--muted); }
 
 .data-table { width: 100%; border-collapse: collapse; background: var(--surface); box-shadow: var(--soft-shadow); }
-.data-table th, .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.data-table th, .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .data-table th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; }
 .row-link { cursor: pointer; }
 .row-link:hover { background: #f8fbff; }
