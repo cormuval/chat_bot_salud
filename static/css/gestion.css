@@ -102,10 +102,19 @@ button { cursor: pointer; }
 
 .data-table { width: 100%; border-collapse: collapse; background: var(--surface); box-shadow: var(--soft-shadow); }
 .data-table th, .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+/* Tabla del selector: columnas de ancho fijo; el Motivo (sin ancho) absorbe el
+   resto y trunca, asi un texto largo no aplasta ni desborda. */
+.data-table--selector { table-layout: fixed; }
+.data-table--selector .col-paciente { width: 18%; }
+.data-table--selector .col-centro { width: 16%; }
+.data-table--selector .col-prioridad { width: 11rem; }
+.data-table--selector .col-fecha { width: 9rem; }
+.data-table--selector .col-correccion { width: 12rem; }
+.data-table--selector .col-abrir { width: 5rem; }
 .data-table th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; }
 .row-link { cursor: pointer; }
 .row-link:hover { background: #f8fbff; }
-.truncate { max-width: 34rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.truncate { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .priority-badge, .status-badge {
   display: inline-flex;
@@ -180,7 +189,8 @@ button { cursor: pointer; }
   .data-table tr { margin-bottom: var(--space-3); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--soft-shadow); }
   .data-table td { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--space-2); border-bottom: 1px solid var(--line); }
   .data-table td::before { content: attr(data-label); color: var(--muted); font-weight: 700; }
-  .truncate { white-space: normal; }
+  .data-table--selector colgroup { display: none; }
+  .truncate { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .detail-grid { grid-template-columns: 1fr; }
 }
 

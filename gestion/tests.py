@@ -2931,3 +2931,50 @@ class GuardarCupoTests(TestCase):
         self.assertContains(r, "Cupos del dia")
         self.assertContains(r, 'name="cupos_iniciales"')
         self.assertContains(r, "/selector/cupos/")
+
+
+@override_settings(ALLOWED_HOSTS=["gestion.localhost", "testserver"], GESTION_HOST="gestion.localhost")
+class ListaSelectorFrontendTests(TestCase):
+    CSS = Path(__file__).resolve().parent.parent / "static" / "css" / "gestion.css"
+
+    def setUp(self):
+        self.centro = Centro.objects.get(pk=620)
+        self.user = User.objects.create_user("sel@x.cl", "sel@x.cl")
+        PerfilUsuario.objects.create(
+            usuario=self.user, rol=PerfilUsuario.Rol.SELECTOR, centro=self.centro
+        )
+        self.client.force_login(self.user)
+
+    def _get(self, url):
+        return self.client.get(url, HTTP_HOST="gestion.localhost")
+
+    def test_tabla_tiene_clase_selector_y_colgroup(self):
+        r = self._get("/selector/")
+        self.assertContains(r, 'class="data-table data-table--selector"')
+        self.assertContains(r, "<colgroup>")
+        self.assertContains(r, 'class="col-motivo"')
+        self.assertNotContains(r, 'class="col-correccion"')
+
+    def test_decididas_agrega_col_correccion(self):
+        r = self._get("/selector/?seccion=decididas")
+        self.assertContains(r, 'class="col-correccion"')
+
+    def test_motivo_trunca_con_texto_completo_en_title(self):
+        crear_solicitud_base(
+            centro_salud=self.centro,
+            detalle_motivo="Dolor de cabeza intenso hace tres dias",
+        )
+        r = self._get("/selector/")
+        self.assertContains(
+            r, 'class="truncate" title="Dolor de cabeza intenso hace tres dias"'
+        )
+
+    def test_css_layout_fijo_acotado_y_truncate(self):
+        css = self.CSS.read_text(encoding="utf-8")
+        self.assertIn(".data-table--selector { table-layout: fixed; }", css)
+        self.assertIn(".data-table--selector .col-paciente { width: 18%; }", css)
+        self.assertIn(
+            ".truncate { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+            css,
+        )
+        self.assertIn("-webkit-line-clamp: 2", css)

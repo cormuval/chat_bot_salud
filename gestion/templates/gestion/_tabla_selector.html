@@ -8,7 +8,16 @@
     {% endif %}
   </nav>
 
-  <table class="data-table" data-gestion-list>
+  <table class="data-table data-table--selector" data-gestion-list>
+    <colgroup>
+      <col class="col-paciente">
+      {% if mostrar_columna_centro %}<col class="col-centro">{% endif %}
+      <col class="col-prioridad">
+      <col class="col-motivo">
+      <col class="col-fecha">
+      {% if seccion == "decididas" %}<col class="col-correccion">{% endif %}
+      <col class="col-abrir">
+    </colgroup>
     <thead>
       <tr>
         <th>Paciente</th>
@@ -37,7 +46,7 @@
               {% endfor %}
             </span>
           </td>
-          <td data-label="Motivo"><span class="truncate">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
+          <td data-label="Motivo"><span class="truncate" title="{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
           <td data-label="Fecha"><time title="{{ gestion.solicitud.date_solicitud }}">{{ gestion.solicitud.date_solicitud|tiempo_relativo }}</time></td>
           {% if seccion == "decididas" %}
             <td data-label="Correccion">
