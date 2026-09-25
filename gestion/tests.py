@@ -2999,3 +2999,18 @@ class ListaSelectorFrontendTests(TestCase):
         css = self.CSS.read_text(encoding="utf-8")
         self.assertIn(".tab-nav {", css)
         self.assertIn(".tab-link.is-active {", css)
+
+    def test_cupo_muestra_numero_grande(self):
+        from gestion.models import CupoDiario
+        CupoDiario.objects.create(
+            centro=self.centro, fecha=timezone.localdate(), cupos_iniciales=18
+        )
+        r = self._get("/selector/")
+        self.assertContains(r, '<span class="cupo-card__numero">18</span>')
+        self.assertContains(r, "Cupos del dia")
+        self.assertContains(r, 'name="cupos_iniciales"')
+
+    def test_css_cupos_no_se_estira(self):
+        css = self.CSS.read_text(encoding="utf-8")
+        self.assertIn("repeat(auto-fill, minmax(260px, 360px))", css)
+        self.assertIn(".cupo-card__numero {", css)
