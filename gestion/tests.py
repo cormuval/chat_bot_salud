@@ -2978,3 +2978,24 @@ class ListaSelectorFrontendTests(TestCase):
             css,
         )
         self.assertIn("-webkit-line-clamp: 2", css)
+
+    def test_pestana_activa_pendientes(self):
+        r = self._get("/selector/")
+        self.assertContains(r, 'class="tab-nav"')
+        self.assertContains(
+            r, 'class="tab-link is-active" href="/selector/" aria-current="page"'
+        )
+        self.assertContains(r, 'class="tab-link" href="/selector/?seccion=decididas"')
+
+    def test_pestana_activa_decididas(self):
+        r = self._get("/selector/?seccion=decididas")
+        self.assertContains(
+            r,
+            'class="tab-link is-active" href="/selector/?seccion=decididas" aria-current="page"',
+        )
+        self.assertContains(r, 'class="tab-link" href="/selector/"')
+
+    def test_css_pestana_activa(self):
+        css = self.CSS.read_text(encoding="utf-8")
+        self.assertIn(".tab-nav {", css)
+        self.assertIn(".tab-link.is-active {", css)

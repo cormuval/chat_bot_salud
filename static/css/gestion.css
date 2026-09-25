@@ -95,6 +95,21 @@ button { cursor: pointer; }
   background: var(--surface);
 }
 
+/* Pestañas de seccion del selector (distintas del nav principal). */
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.tab-link.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #FFFFFF;
+}
+
 .gestion-main { width: min(100% - 32px, 1280px); margin: 0 auto; padding: var(--space-5) 0; }
 .page-title { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
 .page-title h2 { margin: 0; font-size: 1.35rem; }
