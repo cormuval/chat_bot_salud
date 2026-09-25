@@ -1,14 +1,23 @@
 {% load gestion_ui %}
 <div data-fragment-kind="selector-table" data-selector-table-region data-selector-section="{{ seccion }}">
-  <nav class="gestion-nav" aria-label="Secciones del selector">
-    <a class="tab-link" href="{% url 'gestion:selector_lista' %}">Pendientes <strong>{{ conteos_selector.pendientes }}</strong></a>
-    <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=decididas">Decididas corregibles <strong>{{ conteos_selector.decididas }}</strong></a>
+  <nav class="tab-nav" aria-label="Secciones del selector">
+    <a class="tab-link{% if seccion == "pendientes" %} is-active{% endif %}" href="{% url 'gestion:selector_lista' %}"{% if seccion == "pendientes" %} aria-current="page"{% endif %}>Pendientes <strong>{{ conteos_selector.pendientes }}</strong></a>
+    <a class="tab-link{% if seccion == "decididas" %} is-active{% endif %}" href="{% url 'gestion:selector_lista' %}?seccion=decididas"{% if seccion == "decididas" %} aria-current="page"{% endif %}>Decididas corregibles <strong>{{ conteos_selector.decididas }}</strong></a>
     {% if mostrar_no_aplica %}
-      <a class="tab-link" href="{% url 'gestion:selector_lista' %}?seccion=no_aplica">No aplica <strong>{{ conteos_selector.no_aplica }}</strong></a>
+      <a class="tab-link{% if seccion == "no_aplica" %} is-active{% endif %}" href="{% url 'gestion:selector_lista' %}?seccion=no_aplica"{% if seccion == "no_aplica" %} aria-current="page"{% endif %}>No aplica <strong>{{ conteos_selector.no_aplica }}</strong></a>
     {% endif %}
   </nav>
 
-  <table class="data-table" data-gestion-list>
+  <table class="data-table data-table--selector" data-gestion-list>
+    <colgroup>
+      <col class="col-paciente">
+      {% if mostrar_columna_centro %}<col class="col-centro">{% endif %}
+      <col class="col-prioridad">
+      <col class="col-motivo">
+      <col class="col-fecha">
+      {% if seccion == "decididas" %}<col class="col-correccion">{% endif %}
+      <col class="col-abrir">
+    </colgroup>
     <thead>
       <tr>
         <th>Paciente</th>
@@ -37,7 +46,7 @@
               {% endfor %}
             </span>
           </td>
-          <td data-label="Motivo"><span class="truncate">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
+          <td data-label="Motivo"><span class="truncate" title="{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}">{{ gestion.solicitud.detalle_motivo|default:gestion.solicitud.motivo }}</span></td>
           <td data-label="Fecha"><time title="{{ gestion.solicitud.date_solicitud }}">{{ gestion.solicitud.date_solicitud|tiempo_relativo }}</time></td>
           {% if seccion == "decididas" %}
             <td data-label="Correccion">

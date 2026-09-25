@@ -95,6 +95,21 @@ button { cursor: pointer; }
   background: var(--surface);
 }
 
+/* Pestañas de seccion del selector (distintas del nav principal). */
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.tab-link.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #FFFFFF;
+}
+
 .gestion-main { width: min(100% - 32px, 1280px); margin: 0 auto; padding: var(--space-5) 0; }
 .page-title { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
 .page-title h2 { margin: 0; font-size: 1.35rem; }
@@ -102,10 +117,28 @@ button { cursor: pointer; }
 
 .data-table { width: 100%; border-collapse: collapse; background: var(--surface); box-shadow: var(--soft-shadow); }
 .data-table th, .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+/* Tabla del selector: columnas de ancho fijo; el Motivo (sin ancho) absorbe el
+   resto y trunca, asi un texto largo no aplasta ni desborda. */
+.data-table--selector { table-layout: fixed; }
+.data-table--selector .col-paciente { width: 18%; }
+.data-table--selector .col-centro { width: 16%; }
+.data-table--selector .col-prioridad { width: 11rem; }
+.data-table--selector .col-fecha { width: 9rem; }
+.data-table--selector .col-correccion { width: 12rem; }
+.data-table--selector .col-abrir { width: 5rem; }
+.data-table--selector .priority-badge { white-space: normal; }
+/* Escritorio angosto: comprime columnas fijas para que el Motivo conserve espacio. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .data-table--selector .col-paciente { width: 16%; }
+  .data-table--selector .col-centro { width: 14%; }
+  .data-table--selector .col-prioridad { width: 10rem; }
+  .data-table--selector .col-fecha { width: 7rem; }
+  .data-table--selector .col-correccion { width: 10rem; }
+}
 .data-table th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; }
 .row-link { cursor: pointer; }
 .row-link:hover { background: #f8fbff; }
-.truncate { max-width: 34rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.truncate { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .priority-badge, .status-badge {
   display: inline-flex;
@@ -180,7 +213,8 @@ button { cursor: pointer; }
   .data-table tr { margin-bottom: var(--space-3); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--soft-shadow); }
   .data-table td { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--space-2); border-bottom: 1px solid var(--line); }
   .data-table td::before { content: attr(data-label); color: var(--muted); font-weight: 700; }
-  .truncate { white-space: normal; }
+  .data-table--selector colgroup { display: none; }
+  .truncate { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .detail-grid { grid-template-columns: 1fr; }
 }
 
@@ -355,16 +389,16 @@ button:disabled {
 .admin-tiles { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 
 .cupos-selector {
-  margin: 0 0 18px;
+  margin: 0 0 var(--space-4);
 }
 .cupos-selector__titulo {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   font-size: 1rem;
 }
 .cupos-selector__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 360px));
+  gap: var(--space-3);
 }
 .cupo-card {
   display: flex;
@@ -378,6 +412,15 @@ button:disabled {
 .cupo-card__disponibles {
   color: #145EA8;
   font-weight: 700;
+}
+.cupo-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.cupo-card__numero {
+  font-size: 1.8rem;
+  line-height: 1;
 }
 .cupo-card__form {
   display: flex;

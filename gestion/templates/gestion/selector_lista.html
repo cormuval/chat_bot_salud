@@ -18,14 +18,12 @@
       {% csrf_token %}
       <input type="hidden" name="centro_id" value="{{ fila.centro.pk }}">
       <div class="cupo-card__info">
-        <strong>{{ fila.centro }}</strong>
-        <span class="cupo-card__disponibles">
-          {% if fila.disponibles is None %}
-            Sin cargar
-          {% else %}
-            {{ fila.disponibles }} / {{ fila.iniciales }} disponibles
-          {% endif %}
-        </span>
+        <strong class="cupo-card__centro">{{ fila.centro }}</strong>
+        {% if fila.disponibles is None %}
+          <span class="cupo-card__disponibles">Sin cargar</span>
+        {% else %}
+          <span class="cupo-card__disponibles"><span class="cupo-card__numero">{{ fila.disponibles }}</span> / {{ fila.iniciales }} disponibles</span>
+        {% endif %}
       </div>
       <div class="cupo-card__form">
         <label class="sr-only" for="cupo-{{ fila.centro.pk }}">Cupos iniciales de {{ fila.centro }}</label>
