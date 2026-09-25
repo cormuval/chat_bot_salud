@@ -3012,5 +3012,11 @@ class ListaSelectorFrontendTests(TestCase):
 
     def test_css_cupos_no_se_estira(self):
         css = self.CSS.read_text(encoding="utf-8")
-        self.assertIn("repeat(auto-fill, minmax(260px, 360px))", css)
+        self.assertIn("repeat(auto-fill, minmax(min(260px, 100%), 360px))", css)
         self.assertIn(".cupo-card__numero {", css)
+
+    def test_css_escritorio_angosto_y_badge(self):
+        css = self.CSS.read_text(encoding="utf-8")
+        self.assertIn("@media (min-width: 901px) and (max-width: 1100px)", css)
+        self.assertIn(".data-table--selector .col-paciente { width: 16%; }", css)
+        self.assertIn(".data-table--selector .priority-badge { white-space: normal; }", css)

@@ -126,6 +126,15 @@ button { cursor: pointer; }
 .data-table--selector .col-fecha { width: 9rem; }
 .data-table--selector .col-correccion { width: 12rem; }
 .data-table--selector .col-abrir { width: 5rem; }
+.data-table--selector .priority-badge { white-space: normal; }
+/* Escritorio angosto: comprime columnas fijas para que el Motivo conserve espacio. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .data-table--selector .col-paciente { width: 16%; }
+  .data-table--selector .col-centro { width: 14%; }
+  .data-table--selector .col-prioridad { width: 10rem; }
+  .data-table--selector .col-fecha { width: 7rem; }
+  .data-table--selector .col-correccion { width: 10rem; }
+}
 .data-table th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; }
 .row-link { cursor: pointer; }
 .row-link:hover { background: #f8fbff; }
@@ -388,7 +397,7 @@ button:disabled {
 }
 .cupos-selector__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 360px));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 360px));
   gap: var(--space-3);
 }
 .cupo-card {
